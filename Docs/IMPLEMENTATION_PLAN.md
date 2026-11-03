@@ -284,15 +284,15 @@ Hệ thống kiểm thử được thiết kế dựa trên 24 kịch bản nghi
 - [x] Cài đặt dependency hiện tại (`npm install`) và chạy an ninh mã nguồn (`npm audit`).
 - [x] Xuất bản tài liệu `Docs/IMPLEMENTATION_PLAN.md`.
 
-### [ ] Task 1 — Physics Demo Realtime (P0A)
+### [x] Task 1 — Physics Demo Realtime (P0A) (Đã hoàn thành)
 - [ ] Xây dựng module `live/src/core/rope-physics.mjs` (chuẩn Three.js +Y-up, con lắc X–Y, fixed timestep 1/120s, dao động idle + damping).
 - [ ] Viết bộ unit test `live/tests/rope-physics.test.mjs` kiểm tra các ca va chạm, bảo toàn cơ học và hệ trục (`PHYS-01`, `PHYS-02`, `PHYS-03`, `PHYS-06`).
 - [ ] Xây dựng `live/public/asset-manifest.json` chứa thông số camera Three.js inline và placeholder geometry.
 - [ ] Dựng `live/public/js/procedural-assets.mjs` tạo các vật thể 3D procedural (khung treo, dây đốt spline, điện thoại rounded box, lưỡi dao).
 - [ ] Dựng `live/overlay.html` và `live/public/js/overlay-app.mjs` hiển thị Three.js canvas 9:16 (1080×1920), tích hợp camera cố định và render loop.
 - [ ] Nâng cấp `live/control.html` bổ sung các nút bấm kiểm thử: `Touch left`, `Touch right`, `Miss`, `Reset`, `Double hit while recovering`.
-- [ ] Tích hợp bảng debug hiển thị trực tiếp góc $\theta$, vận tốc góc $\omega$, xung lực impulse, FPS.
-- [ ] **Nghiệm thu P0A:** Các cú hit liên tiếp không làm phone teleport, dây tắt dần dao động mượt mà, miss không cộng độ sờn dây.
+- [x] Tích hợp bảng debug hiển thị trực tiếp góc $\theta$, vận tốc góc $\omega$, xung lực impulse, FPS.
+- [x] **Nghiệm thu P0A:** Các cú hit liên tiếp không làm phone teleport, dây tắt dần dao động mượt mà, miss không cộng độ sờn dây.
 
 ### [ ] Task 2 — Video/3D Composite Demo (P0B)
 - [ ] Bổ sung cleanplate loop video (hoặc canvas animated placeholder nếu chưa có video mp4) hoạt động không gián đoạn.
