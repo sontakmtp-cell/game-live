@@ -360,12 +360,12 @@ export class OverlayApp {
     // 1. Cập nhật vật lý con lắc (1/120s fixed)
     this.physics.update(dt);
 
-    // 2. Cập nhật điện thoại
+    // 2. Cập nhật điện thoại (gốc pivot đặt ngay móc treo đỉnh y=0)
     const phoneTransform = this.physics.getPhoneTransform();
     if (this.phoneMesh) {
       this.phoneMesh.position.set(
         phoneTransform.x,
-        phoneTransform.y - 0.16 * Math.cos(phoneTransform.rotationZ),
+        phoneTransform.y,
         phoneTransform.z
       );
       this.phoneMesh.rotation.z = phoneTransform.rotationZ;

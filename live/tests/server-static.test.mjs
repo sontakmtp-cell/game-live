@@ -115,10 +115,14 @@ test('Static Routing & Security Allowlist', async (t) => {
     assert.ok(res.headers['content-type'].includes('video/mp4'));
   });
 
-  await t.test('7. Serve /live/public/js/vendor/three.module.js -> 200 text/javascript', async () => {
+  await t.test('7. Serve /live/public/js/vendor/three.module.js & three.core.js -> 200 text/javascript', async () => {
     const res = await request('/live/public/js/vendor/three.module.js');
     assert.strictEqual(res.status, 200);
     assert.ok(res.headers['content-type'].includes('text/javascript'));
+
+    const resCore = await request('/live/public/js/vendor/three.core.js');
+    assert.strictEqual(resCore.status, 200);
+    assert.ok(resCore.headers['content-type'].includes('text/javascript'));
   });
 
   await t.test('8. Block server code /live/server.mjs -> 404 (SEC-01)', async () => {

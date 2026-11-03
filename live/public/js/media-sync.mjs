@@ -75,9 +75,9 @@ export class MediaSyncManager {
       v.style.width = '100%';
       v.style.height = '100%';
       v.style.objectFit = 'contain';
-      v.style.zIndex = '3';
+      v.style.zIndex = '1';
+      v.style.opacity = '0'; // Chạy ẩn rVFC tracking, không che khuất điện thoại và dây 3D
       v.style.pointerEvents = 'none';
-      v.style.display = 'none';
       this.container.appendChild(v);
       this.actionVideo = v;
     }
@@ -141,7 +141,7 @@ export class MediaSyncManager {
     if (!this.actionVideo) return;
 
     const v = this.actionVideo;
-    v.style.display = 'block';
+    v.style.opacity = '0'; // Giữ trong suốt để không che phủ canvas 3D
     v.currentTime = 0; // Luôn phát từ 0.0s
 
     this.isPlayingAction = true;

@@ -95,7 +95,7 @@ export function createPhoneMesh(dimensions = [0.16, 0.32, 0.016]) {
   const group = new THREE.Group();
   const [w, h, d] = dimensions;
 
-  // Thân máy kim loại viền bo
+  // Thân máy kim loại viền bo (treo phía dưới móc neo tại y=0)
   const bodyGeo = new THREE.BoxGeometry(w, h, d);
   const bodyMat = new THREE.MeshStandardMaterial({
     color: 0x1e2430,
@@ -103,6 +103,7 @@ export function createPhoneMesh(dimensions = [0.16, 0.32, 0.016]) {
     roughness: 0.25,
   });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.set(0, -h * 0.5, 0);
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
@@ -115,7 +116,7 @@ export function createPhoneMesh(dimensions = [0.16, 0.32, 0.016]) {
     roughness: 0.05,
   });
   const screen = new THREE.Mesh(screenGeo, screenMat);
-  screen.position.set(0, 0, d * 0.5 + 0.0005);
+  screen.position.set(0, -h * 0.5, d * 0.5 + 0.0005);
   group.add(screen);
 
   // Viền camera cụm sau
@@ -126,10 +127,10 @@ export function createPhoneMesh(dimensions = [0.16, 0.32, 0.016]) {
     roughness: 0.2,
   });
   const bump = new THREE.Mesh(bumpGeo, bumpMat);
-  bump.position.set(w * 0.22, h * 0.3, -d * 0.5 - 0.0025);
+  bump.position.set(w * 0.22, -h * 0.2, -d * 0.5 - 0.0025);
   group.add(bump);
 
-  // Móc treo trên đỉnh điện thoại
+  // Móc treo trên đỉnh điện thoại (ngay tại gốc pivot y = 0 gắn với đầu dây)
   const topHookGeo = new THREE.TorusGeometry(0.014, 0.003, 8, 16);
   const hookMat = new THREE.MeshStandardMaterial({
     color: 0xc89b3c,
@@ -137,7 +138,7 @@ export function createPhoneMesh(dimensions = [0.16, 0.32, 0.016]) {
     roughness: 0.2,
   });
   const topHook = new THREE.Mesh(topHookGeo, hookMat);
-  topHook.position.set(0, h * 0.5, 0);
+  topHook.position.set(0, 0, 0);
   topHook.rotation.x = Math.PI / 2;
   group.add(topHook);
 
@@ -213,13 +214,13 @@ export function createKnifeMesh(side = 'left') {
   const group = new THREE.Group();
   const dir = side === 'left' ? 1 : -1;
 
-  // Lưỡi dao vát nhọn sắc
+  // Lưỡi dao vát nhọn sắc: Mũi dao nằm chuẩn xác tại x = 0 (tọa độ tiếp xúc chuẩn)
   const bladeShape = new THREE.Shape();
-  bladeShape.moveTo(0, -0.035);
-  bladeShape.lineTo(0.35, -0.015);
-  bladeShape.lineTo(0.42, 0);
-  bladeShape.lineTo(0.35, 0.015);
-  bladeShape.lineTo(0, 0.035);
+  bladeShape.moveTo(-0.42, -0.035);
+  bladeShape.lineTo(-0.07, -0.015);
+  bladeShape.lineTo(0, 0); // Mũi dao tại x = 0
+  bladeShape.lineTo(-0.07, 0.015);
+  bladeShape.lineTo(-0.42, 0.035);
   bladeShape.closePath();
 
   const extrudeSettings = { depth: 0.006, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002 };
@@ -233,25 +234,28 @@ export function createKnifeMesh(side = 'left') {
   const blade = new THREE.Mesh(bladeGeo, bladeMat);
   blade.castShadow = true;
 
-  if (side === 'left') {
-    blade.rotation.y = 0;
-    blade.position.set(0, 0, -0.003);
-  } else {
-    blade.rotation.y = Math.PI;
-    blade.position.set(0, 0, 0.003);
-  }
-  group.add(blade);
-
-  // Cán dao kim loại thủy lực
-  const handleGeo = new THREE.BoxGeometry(0.4, 0.06, 0.03);
+  // Cán dao kim loại thủy lực nằm phía sau lưỡi dao
+  const handleGeo = new THREE.BoxGeometry(0.35, 0.06, 0.03);
   const handleMat = new THREE.MeshStandardMaterial({
     color: 0x481c1c, // Đỏ công nghiệp
     metalness: 0.5,
     roughness: 0.4,
   });
   const handle = new THREE.Mesh(handleGeo, handleMat);
-  handle.position.set(-dir * 0.2, 0, 0);
-  group.add(handle);
+  handle.position.set(-0.55, 0, 0);
+
+  const subGroup = new THREE.Group();
+  subGroup.add(blade);
+  subGroup.add(handle);
+
+  if (side === 'left') {
+    subGroup.rotation.y = 0;
+    blade.position.set(0, 0, -0.003);
+  } else {
+    subGroup.rotation.y = Math.PI;
+    blade.position.set(0, 0, 0.003);
+  }
+  group.add(subGroup);
 
   return group;
 }

@@ -285,22 +285,26 @@ Hệ thống kiểm thử được thiết kế dựa trên 24 kịch bản nghi
 - [x] Xuất bản tài liệu `Docs/IMPLEMENTATION_PLAN.md`.
 
 ### [x] Task 1 — Physics Demo Realtime (P0A) (Đã hoàn thành)
-- [ ] Xây dựng module `live/src/core/rope-physics.mjs` (chuẩn Three.js +Y-up, con lắc X–Y, fixed timestep 1/120s, dao động idle + damping).
-- [ ] Viết bộ unit test `live/tests/rope-physics.test.mjs` kiểm tra các ca va chạm, bảo toàn cơ học và hệ trục (`PHYS-01`, `PHYS-02`, `PHYS-03`, `PHYS-06`).
-- [ ] Xây dựng `live/public/asset-manifest.json` chứa thông số camera Three.js inline và placeholder geometry.
-- [ ] Dựng `live/public/js/procedural-assets.mjs` tạo các vật thể 3D procedural (khung treo, dây đốt spline, điện thoại rounded box, lưỡi dao).
-- [ ] Dựng `live/overlay.html` và `live/public/js/overlay-app.mjs` hiển thị Three.js canvas 9:16 (1080×1920), tích hợp camera cố định và render loop.
-- [ ] Nâng cấp `live/control.html` bổ sung các nút bấm kiểm thử: `Touch left`, `Touch right`, `Miss`, `Reset`, `Double hit while recovering`.
+- [x] Xây dựng module `live/src/core/rope-physics.mjs` (chuẩn Three.js +Y-up, con lắc X–Y, fixed timestep 1/120s, dao động idle + damping).
+- [x] Viết bộ unit test `live/tests/rope-physics.test.mjs` kiểm tra các ca va chạm, bảo toàn cơ học và hệ trục (`PHYS-01`, `PHYS-02`, `PHYS-03`, `PHYS-06`).
+- [x] Xây dựng `live/public/asset-manifest.json` chứa thông số camera Three.js inline và placeholder geometry.
+- [x] Dựng `live/public/js/procedural-assets.mjs` tạo các vật thể 3D procedural (khung treo, dây đốt spline, điện thoại rounded box, lưỡi dao).
+- [x] Dựng `live/overlay.html` và `live/public/js/overlay-app.mjs` hiển thị Three.js canvas 9:16 (1080×1920), tích hợp camera cố định và render loop.
+- [x] Nâng cấp `live/control.html` bổ sung các nút bấm kiểm thử: `Touch left`, `Touch right`, `Miss`, `Reset`, `Double hit while recovering`.
 - [x] Tích hợp bảng debug hiển thị trực tiếp góc $\theta$, vận tốc góc $\omega$, xung lực impulse, FPS.
 - [x] **Nghiệm thu P0A:** Các cú hit liên tiếp không làm phone teleport, dây tắt dần dao động mượt mà, miss không cộng độ sờn dây.
 
-### [ ] Task 2 — Video/3D Composite Demo (P0B)
-- [x] Bổ sung cleanplate loop video (hoặc canvas animated placeholder nếu chưa có video mp4) hoạt động không gián đoạn.
-- [x] Tạo video action clip placeholder hoặc proxy tool 3D di chuyển có quỹ đạo chuẩn bắt đầu từ `t=0`.
-- [ ] Xây dựng công cụ asset validator bằng `ffprobe` kiểm tra CFR 30fps, keyframe tại frame 0, PTS bắt đầu 0 (`VIDEO-02`, `VIDEO-04`).
-- [ ] Xây dựng `live/public/js/media-sync.mjs` theo dõi thời gian qua `requestVideoFrameCallback` (rVFC) và tính toán `mediaDriftMs`.
-- [x] Hiệu chuẩn căn chỉnh hình học camera giữa lớp 3D và lớp video plane (sai số mục tiêu < 5px tại vùng contact point).
-- [x] **Nghiệm thu P0B:** Đạo cụ vươn tới đúng vùng dây, không xuất hiện bóng ma hay hai dao, video loop không bị khởi động lại khi có action.
+### [x] Task 2 — Video/3D Composite Demo (P0B) (Đã hoàn thành & Đã kiểm chứng thực tế)
+- [x] Sửa lỗi Three.js: bổ sung `three.core.js` vào vendor, giải quyết triệt để lỗi import module trên trình duyệt.
+- [x] Sửa thứ tự hiển thị: Cleanplate video nằm dưới cùng (`z-index: 1`), Canvas 3D Three.js nằm ở giữa (`z-index: 2`, nền trong suốt), HUD nằm trên cùng (`z-index: 10`). Video hành động chạy tracking rVFC ẩn không che khuất điện thoại và dây.
+- [x] Căn chỉnh hình học: Khắc phục lỗi lệch tâm móc treo điện thoại (pivot tại $y=0$) và lỗi mũi dao đâm xuyên qua dây (mũi dao tại $x=0$).
+- [x] Bổ sung cleanplate loop video 10s hoạt động không gián đoạn (`VIDEO-01`).
+- [x] Bổ sung action clip trim bắt đầu từ $t=0$, keyframe tại frame 0, contact marker 800ms (`VIDEO-02`, `VIDEO-04`).
+- [x] Xây dựng công cụ asset validator bằng `ffprobe` (`live/src/core/asset-validator.mjs`).
+- [x] Xây dựng `live/public/js/media-sync.mjs` theo dõi thời gian qua `requestVideoFrameCallback` (rVFC) và đo độ trôi `mediaDriftMs`.
+- [x] Hiệu chuẩn camera giữa lớp 3D và màn hình 1080×1920 (kiểm chứng sai số corridor).
+- [x] **Kiểm chứng thực tế:** Chạy trên trình duyệt Chromium thực tế, kiểm tra Console/Network sạch lỗi, chụp screenshot 9:16 (`Docs/screenshots/`) và xuất video demo thực tế (`Docs/demo_p0b_arcade.mp4`).
+- [x] **Nghiệm thu P0B:** Khung treo, dây, điện thoại, máy nghiền và dao hiển thị rõ ràng, đung đưa mượt mà, chịu va chạm, tắt dần êm ái và phục hồi về idle.
 
 ### [x] Task 3 — Event Engine & Server Authoritative (P1) (Đã hoàn thành)
 - [x] Tách biệt các module lõi:
