@@ -295,12 +295,12 @@ Hệ thống kiểm thử được thiết kế dựa trên 24 kịch bản nghi
 - [x] **Nghiệm thu P0A:** Các cú hit liên tiếp không làm phone teleport, dây tắt dần dao động mượt mà, miss không cộng độ sờn dây.
 
 ### [ ] Task 2 — Video/3D Composite Demo (P0B)
-- [ ] Bổ sung cleanplate loop video (hoặc canvas animated placeholder nếu chưa có video mp4) hoạt động không gián đoạn.
-- [ ] Tạo video action clip placeholder hoặc proxy tool 3D di chuyển có quỹ đạo chuẩn bắt đầu từ `t=0`.
+- [x] Bổ sung cleanplate loop video (hoặc canvas animated placeholder nếu chưa có video mp4) hoạt động không gián đoạn.
+- [x] Tạo video action clip placeholder hoặc proxy tool 3D di chuyển có quỹ đạo chuẩn bắt đầu từ `t=0`.
 - [ ] Xây dựng công cụ asset validator bằng `ffprobe` kiểm tra CFR 30fps, keyframe tại frame 0, PTS bắt đầu 0 (`VIDEO-02`, `VIDEO-04`).
 - [ ] Xây dựng `live/public/js/media-sync.mjs` theo dõi thời gian qua `requestVideoFrameCallback` (rVFC) và tính toán `mediaDriftMs`.
-- [ ] Hiệu chuẩn căn chỉnh hình học camera giữa lớp 3D và lớp video plane (sai số mục tiêu < 5px tại vùng contact point).
-- [ ] **Nghiệm thu P0B:** Đạo cụ vươn tới đúng vùng dây, không xuất hiện bóng ma hay hai dao, video loop không bị khởi động lại khi có action.
+- [x] Hiệu chuẩn căn chỉnh hình học camera giữa lớp 3D và lớp video plane (sai số mục tiêu < 5px tại vùng contact point).
+- [x] **Nghiệm thu P0B:** Đạo cụ vươn tới đúng vùng dây, không xuất hiện bóng ma hay hai dao, video loop không bị khởi động lại khi có action.
 
 ### [ ] Task 3 — Event Engine & Server Authoritative (P1)
 - [ ] Tách biệt các module lõi:

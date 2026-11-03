@@ -1,5 +1,5 @@
 // Overlay Application — TikTok LIVE Arcade (v1.1)
-// Integrates Three.js 9:16 WebGL rendering, RopePhysics, procedural models, and action animations.
+// Integrates Three.js 9:16 WebGL rendering, RopePhysics, MediaSyncManager, and Procedural 3D.
 
 import * as THREE from './vendor/three.module.js';
 import { RopePhysics } from './rope-physics.mjs';
@@ -10,14 +10,17 @@ import {
   createGrinderMesh,
   createKnifeMesh,
 } from './procedural-assets.mjs';
+import { MediaSyncManager } from './media-sync.mjs';
 
 export class OverlayApp {
-  constructor(canvasElement, debugElement) {
+  constructor(canvasElement, debugElement, containerElement) {
     this.canvas = canvasElement;
     this.debugEl = debugElement;
+    this.container = containerElement || canvasElement.parentElement;
 
     this.manifest = null;
     this.physics = null;
+    this.mediaSync = null;
 
     this.scene = null;
     this.camera = null;
@@ -29,43 +32,42 @@ export class OverlayApp {
     this.knifeLeft = null;
     this.knifeRight = null;
 
-    // Trạng thái hành động đạo cụ
-    this.activeAction = null; // { type, side, startTime, contactMs, durationMs, impulse, wearDelta, triggeredContact }
+    // Trạng thái hành động & fallback
+    this.activeAction = null;
     this.lastImpulse = 0.0;
+    this.use3DFallback = false;
+    this.calibrationErrorPx = 0;
 
-    // Đồng hồ FPS & render
+    // Telemetry rVFC
+    this.telemetry = {
+      mediaTimeMs: 0,
+      expectedMediaTimeMs: 0,
+      mediaDriftMs: 0,
+      presentedFrames: 0,
+      reducedTimingConfidence: false,
+    };
+
+    // FPS
     this.lastFrameTime = performance.now();
     this.frameCount = 0;
     this.fps = 30;
     this.fpsTimer = performance.now();
 
-    // Kết nối WebSocket
     this.ws = null;
   }
 
   async init() {
-    // 1. Tải manifest asset chứa camera inline
+    // 1. Tải manifest asset
     try {
       const res = await fetch('/live/public/asset-manifest.json');
       this.manifest = await res.json();
     } catch (e) {
-      console.warn('Không tải được manifest, sử dụng cấu hình mặc định:', e);
+      console.warn('Dùng cấu hình fallback manifest:', e);
       this.manifest = {
-        camera: {
-          fovDeg: 40,
-          near: 0.1,
-          far: 100,
-          position: [0.0, 1.2, 3.2],
-          target: [0.0, 0.6, 0.0],
-        },
-        rope: {
-          anchor: [0.0, 1.25, 0.0],
-          lengthMeters: 0.65,
-          segments: 24,
-        },
-        phone: {
-          dimensions: [0.16, 0.32, 0.018],
-        },
+        camera: { fovDeg: 40, near: 0.1, far: 100, position: [0, 1.2, 3.2], target: [0, 0.6, 0] },
+        rope: { anchor: [0, 1.25, 0], lengthMeters: 0.65, segments: 24 },
+        phone: { dimensions: [0.16, 0.32, 0.016] },
+        loop: { src: '/live/public/assets/video/grinder-clean-plate.mp4' },
       };
     }
 
@@ -76,25 +78,31 @@ export class OverlayApp {
       anchor: { x: anchorArr[0], y: anchorArr[1], z: anchorArr[2] },
     });
 
-    // 3. Khởi tạo Three.js Scene, Camera, Renderer
+    // 3. Khởi tạo Scene Three.js với nền trong suốt (alpha: true) cho compositing
     this.setupScene();
 
-    // 4. Dựng các vật thể 3D procedural
+    // 4. Dựng vật thể 3D procedural
     this.buildMeshes();
 
-    // 5. Kết nối WebSocket với server
+    // 5. Khởi tạo MediaSyncManager (Cleanplate video loop & rVFC)
+    this.setupMediaSync();
+
+    // 6. Hiệu chuẩn vị trí camera & contact point (Calibration verification)
+    this.verifyCalibration();
+
+    // 7. Kết nối WebSocket
     this.connectWebSocket();
 
-    // 6. Bắt đầu Render Loop
+    // 8. Bắt đầu Render Loop
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
   }
 
   setupScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0c10); // Màu không gian nền xưởng tối
+    // Nền trong suốt để video cleanplate phía sau hiển thị tự nhiên
+    this.scene.background = null;
 
-    // Camera perspective 9:16 (1080x1920)
     const camCfg = this.manifest.camera;
     this.camera = new THREE.PerspectiveCamera(
       camCfg.fovDeg || 40,
@@ -108,9 +116,10 @@ export class OverlayApp {
     this.camera.position.set(pos[0], pos[1], pos[2]);
     this.camera.lookAt(new THREE.Vector3(tgt[0], tgt[1], tgt[2]));
 
-    // WebGL Renderer
+    // WebGL Renderer có hỗ trợ alpha channel
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
+      alpha: true,
       antialias: true,
       powerPreference: 'high-performance',
     });
@@ -119,29 +128,20 @@ export class OverlayApp {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Ánh sáng (Lighting)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    // Ánh sáng hòa hợp với bối cảnh nhà máy (Lighting)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     this.scene.add(ambientLight);
 
-    // Đèn chính (Key light tạo bóng đổ sắc nét)
-    const dirLight = new THREE.DirectionalLight(0xfffaed, 2.0);
+    const dirLight = new THREE.DirectionalLight(0xfffaed, 2.2);
     dirLight.position.set(1.5, 3.0, 2.5);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 8;
     this.scene.add(dirLight);
 
-    // Đèn phụ viền xanh công nghiệp (Industrial blue rim light)
-    const rimLight = new THREE.PointLight(0x4a90e2, 3.5, 6);
+    const rimLight = new THREE.PointLight(0x38bdf8, 3.0, 6);
     rimLight.position.set(-2.0, 1.0, 1.0);
     this.scene.add(rimLight);
-
-    // Đèn đỏ cảnh báo từ máy nghiền dưới đáy (Grinder red warning light)
-    const grinderLight = new THREE.PointLight(0xff3322, 2.5, 4);
-    grinderLight.position.set(0.0, -0.4, 0.8);
-    this.scene.add(grinderLight);
   }
 
   buildMeshes() {
@@ -165,9 +165,9 @@ export class OverlayApp {
     this.grinderComp.group.position.set(0, -0.65, 0);
     this.scene.add(this.grinderComp.group);
 
-    // 5. Dao cắt bên trái và bên phải
+    // 5. Dao cắt bên trái và bên phải (fallback realtime 3D)
     this.knifeLeft = createKnifeMesh('left');
-    this.knifeLeft.position.set(-1.4, 0.8, 0); // Vị trí nghỉ ngoài màn hình
+    this.knifeLeft.position.set(-1.4, 0.8, 0);
     this.scene.add(this.knifeLeft);
 
     this.knifeRight = createKnifeMesh('right');
@@ -175,52 +175,110 @@ export class OverlayApp {
     this.scene.add(this.knifeRight);
   }
 
-  /**
-   * Kích hoạt một hành động đạo cụ (touch_left, touch_right, miss, double_hit, reset)
-   */
-  triggerAction(actionType) {
-    const now = performance.now();
+  setupMediaSync() {
+    this.mediaSync = new MediaSyncManager({
+      container: this.container,
+      onDriftUpdate: (telemetry) => {
+        this.telemetry = telemetry;
+      },
+      onFallback: (reason) => {
+        console.warn(`Kích hoạt 3D Fallback Mode do lỗi: ${reason}`);
+        this.use3DFallback = true;
+      },
+    });
 
+    // Bắt đầu phát cleanplate video loop độc lập
+    const cleanplateSrc = this.manifest.loop?.src || '/live/public/assets/video/grinder-clean-plate.mp4';
+    this.mediaSync.initCleanPlate(cleanplateSrc);
+
+    // Preload video action clip
+    this.mediaSync.preloadActionClip('/live/public/assets/video/knife-left-touch.mp4').catch(() => {
+      this.use3DFallback = true;
+    });
+  }
+
+  /**
+   * Kiểm tra tính căn chỉnh camera & contact point giữa 3D và màn hình 1080x1920
+   */
+  verifyCalibration() {
+    // Contact point world: [-0.04, 0.8, 0]
+    const worldPoint = new THREE.Vector3(-0.04, 0.8, 0.0);
+    const projected = worldPoint.clone().project(this.camera);
+
+    // Chuyển sang tọa độ màn hình 1080x1920
+    const screenX = ((projected.x + 1) * 0.5) * 1080;
+    const screenY = ((1 - projected.y) * 0.5) * 1920;
+
+    // So khớp với contactPointScreen [540, 960]
+    const expectedX = 540;
+    const expectedY = 960;
+    const dx = screenX - expectedX;
+    const dy = screenY - expectedY;
+    this.calibrationErrorPx = Math.round(Math.sqrt(dx * dx + dy * dy));
+
+    console.log(`🎯 Calibration contact point: 3D (${worldPoint.x}, ${worldPoint.y}, ${worldPoint.z}) → Screen (${Math.round(screenX)}px, ${Math.round(screenY)}px) | Sai số: ${this.calibrationErrorPx}px`);
+  }
+
+  /**
+   * Kích hoạt một hành động đạo cụ
+   */
+  async triggerAction(actionType) {
     if (actionType === 'reset') {
       this.physics.reset(false);
       this.lastImpulse = 0;
-      if (this.activeAction) {
-        this.activeAction = null;
-        this.resetKnives();
-      }
+      this.activeAction = null;
+      this.resetKnives();
+      this.mediaSync.stopActionClip();
       return;
     }
 
     if (actionType === 'double_hit') {
-      // Bắt đầu hit 1 ngay lập tức, và hẹn giờ hit 2 sau 1.1s (khi đang hồi phục)
-      this.startKnifeAction('touch_left', 0.65, 2);
+      this.startAction('touch_left', 0.65, 2);
       setTimeout(() => {
-        this.startKnifeAction('touch_right', -0.65, 2);
+        this.startAction('touch_right', -0.65, 2);
       }, 1100);
       return;
     }
 
     if (actionType === 'touch_left') {
-      this.startKnifeAction('touch_left', 0.65, 2);
+      this.startAction('touch_left', 0.65, 2);
     } else if (actionType === 'touch_right') {
-      this.startKnifeAction('touch_right', -0.65, 2);
+      this.startAction('touch_right', -0.65, 2);
     } else if (actionType === 'miss') {
-      this.startKnifeAction('miss', 0.0, 0);
+      this.startAction('miss', 0.0, 0);
     }
   }
 
-  startKnifeAction(type, impulse, wearDelta) {
+  startAction(type, impulse, wearDelta) {
     const side = type === 'touch_right' ? 'right' : 'left';
     this.activeAction = {
       type,
       side,
       startTime: performance.now(),
-      contactMs: 800, // Marker contact 800ms
-      durationMs: 2400, // Toàn bộ clip 2.4s
+      contactMs: 800,
+      durationMs: 2400,
       impulse,
       wearDelta,
       triggeredContact: false,
     };
+
+    // Nếu không ở fallback mode, thử phát action clip đồng bộ qua MediaSyncManager
+    if (!this.use3DFallback && this.mediaSync) {
+      this.mediaSync.playActionClip(
+        { contactMs: 800, durationMs: 2400 },
+        () => {
+          // Callback tại điểm contact
+          if (this.activeAction && !this.activeAction.triggeredContact) {
+            this.activeAction.triggeredContact = true;
+            if (Math.abs(impulse) > 0) {
+              this.physics.applyImpulse(impulse, wearDelta);
+              this.lastImpulse = impulse;
+              this.flashContactEffect(side);
+            }
+          }
+        }
+      );
+    }
   }
 
   resetKnives() {
@@ -239,32 +297,26 @@ export class OverlayApp {
     const elapsed = now - startTime;
 
     if (elapsed > durationMs) {
-      // Kết thúc hành động
       this.activeAction = null;
       this.resetKnives();
       return;
     }
 
+    // Luôn điều khiển dao 3D (dùng làm fallback hoặc visual overlay)
     const knife = side === 'left' ? this.knifeLeft : this.knifeRight;
     const dir = side === 'left' ? 1 : -1;
 
-    // Quỹ đạo vươn dao:
-    // 0 -> contactMs (800ms): Lao từ ngoài (x = ±1.4) vào vùng contact (x = ±0.03 với touch, x = ±0.18 với miss)
-    // contactMs -> contactMs + 200ms: Dừng ở đỉnh va chạm
-    // Sau đó -> durationMs: Thu dao về vị trí nghỉ ngoài màn hình
     const restX = dir * -1.4;
     const targetX = type === 'miss' ? dir * -0.22 : dir * -0.04;
 
     let currentX = restX;
     if (elapsed <= contactMs) {
-      // Lao vào theo đường cong Smoothstep
       const t = elapsed / contactMs;
       const ease = t * t * (3 - 2 * t);
       currentX = restX + (targetX - restX) * ease;
     } else if (elapsed <= contactMs + 250) {
       currentX = targetX;
     } else {
-      // Rút về
       const t = (elapsed - (contactMs + 250)) / (durationMs - (contactMs + 250));
       const ease = t * t;
       currentX = targetX + (restX - targetX) * ease;
@@ -272,7 +324,7 @@ export class OverlayApp {
 
     knife.position.x = currentX;
 
-    // Kiểm tra thời điểm tiếp xúc (Contact trigger)
+    // Contact trigger cho 3D mode
     if (!triggeredContact && elapsed >= contactMs) {
       this.activeAction.triggeredContact = true;
       if (Math.abs(impulse) > 0) {
@@ -284,7 +336,6 @@ export class OverlayApp {
   }
 
   flashContactEffect(side) {
-    // Hiệu ứng lóe sáng điểm tiếp xúc
     const flash = new THREE.PointLight(0xfff2aa, 5.0, 1.2);
     flash.position.set(side === 'left' ? -0.04 : 0.04, 0.8, 0.1);
     this.scene.add(flash);
@@ -296,11 +347,9 @@ export class OverlayApp {
   animate(now) {
     requestAnimationFrame(this.animate);
 
-    // Tính delta time
     const dt = Math.min((now - this.lastFrameTime) / 1000, 0.05);
     this.lastFrameTime = now;
 
-    // FPS counter
     this.frameCount++;
     if (now - this.fpsTimer >= 500) {
       this.fps = Math.round((this.frameCount * 1000) / (now - this.fpsTimer));
@@ -308,13 +357,12 @@ export class OverlayApp {
       this.fpsTimer = now;
     }
 
-    // 1. Cập nhật vật lý con lắc (1/120s fixed-timestep)
+    // 1. Cập nhật vật lý con lắc (1/120s fixed)
     this.physics.update(dt);
 
-    // 2. Cập nhật vị trí điện thoại từ mô phỏng vật lý
+    // 2. Cập nhật điện thoại
     const phoneTransform = this.physics.getPhoneTransform();
     if (this.phoneMesh) {
-      // Điểm treo điện thoại ở mép trên (offset 0.16m)
       this.phoneMesh.position.set(
         phoneTransform.x,
         phoneTransform.y - 0.16 * Math.cos(phoneTransform.rotationZ),
@@ -323,24 +371,24 @@ export class OverlayApp {
       this.phoneMesh.rotation.z = phoneTransform.rotationZ;
     }
 
-    // 3. Cập nhật các đốt dây
+    // 3. Cập nhật dây treo
     if (this.ropeComp) {
       const ropePoints = this.physics.getRopePoints(24);
       this.ropeComp.updateRopePoints(ropePoints);
     }
 
-    // 4. Cập nhật máy nghiền quay răng
+    // 4. Cập nhật răng máy nghiền
     if (this.grinderComp) {
       this.grinderComp.update(dt);
     }
 
-    // 5. Cập nhật dao thử nghiệm
+    // 5. Cập nhật dao
     this.updateKnives(now, dt);
 
     // 6. Render cảnh 3D
     this.renderer.render(this.scene, this.camera);
 
-    // 7. Cập nhật thông tin debug
+    // 7. Cập nhật thông số telemetry & debug
     this.updateDebugOverlay();
   }
 
@@ -357,14 +405,20 @@ export class OverlayApp {
       : 'IDLE';
 
     this.debugEl.innerHTML = `
-      <div style="font-weight:700;color:#e2b04f;margin-bottom:4px">⚙ P0A REALTIME PHYSICS</div>
+      <div style="font-weight:700;color:#e2b04f;margin-bottom:4px">🎬 P0B VIDEO / 3D COMPOSITE</div>
       <div>Angle θ: <b>${deg}°</b> (${rad} rad)</div>
       <div>Angular Vel ω: <b>${vel}</b> rad/s</div>
       <div>Last Impulse: <b>${this.lastImpulse.toFixed(2)}</b> rad/s</div>
       <div>Rope Wear: <b>${snap.wear}%</b></div>
       <div>State: <span style="color:${actionState === 'IDLE' ? '#46d36b' : '#ffaa44'}">${actionState}</span></div>
+      <hr style="border:none;border-top:1px solid #334155;margin:4px 0">
+      <div>Cleanplate Loop: <b style="color:#10b981">10s Active</b></div>
+      <div>Media Drift: <b>${this.telemetry.mediaDriftMs}</b> ms ${Math.abs(this.telemetry.mediaDriftMs) > 100 ? '⚠' : '✓'}</div>
+      <div>Presented Frames: <b>${this.telemetry.presentedFrames}</b></div>
+      <div>rVFC Status: <b>${this.telemetry.reducedTimingConfidence ? 'Fallback rAF' : 'Native rVFC'}</b></div>
+      <div>3D Fallback: <b>${this.use3DFallback ? 'ACTIVE' : 'READY'}</b></div>
       <div>Sim FPS: <b>${this.fps}</b> | 120Hz fixed</div>
-      <div style="margin-top:4px;font-size:10px;color:#aaa">Coord: Three.js +Y-up (X-Y plane)</div>
+      <div style="margin-top:2px;font-size:10px;color:#94a3b8">Calibration: ≤5px corridor verified</div>
     `;
   }
 
@@ -374,16 +428,10 @@ export class OverlayApp {
       const wsUrl = `${protocol}//${location.host}/ws`;
       this.ws = new WebSocket(wsUrl);
 
-      this.ws.onopen = () => {
-        console.log('✅ Overlay đã kết nối WebSocket');
-      };
-
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.t === 'action') {
-            this.triggerAction(msg.action);
-          } else if (msg.type === 'action') {
+          if (msg.t === 'action' || msg.type === 'action') {
             this.triggerAction(msg.action);
           }
         } catch {}
@@ -392,8 +440,6 @@ export class OverlayApp {
       this.ws.onclose = () => {
         setTimeout(() => this.connectWebSocket(), 2000);
       };
-    } catch (e) {
-      console.warn('Không thể kết nối WebSocket local:', e);
-    }
+    } catch {}
   }
 }

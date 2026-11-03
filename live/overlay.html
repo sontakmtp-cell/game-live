@@ -273,7 +273,7 @@ fitStage();
 // Khởi chạy ứng dụng Three.js Overlay
 const canvas = document.getElementById('three-canvas');
 const debugPanel = document.getElementById('debug-panel');
-const app = new OverlayApp(canvas, debugPanel);
+const app = new OverlayApp(canvas, debugPanel, stage);
 await app.init();
 
 // Hook cập nhật wear bar

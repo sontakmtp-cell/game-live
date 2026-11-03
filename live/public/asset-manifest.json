@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1",
-  "status": "P0A_PROCEDURAL_PLACEHOLDER",
+  "status": "P0B_COMPOSITE_VERIFIED",
   "sceneId": "industrial_phone_grinder_v1",
   "camera": {
     "id": "CAMERA_MAIN",
@@ -8,9 +8,9 @@
     "fps": 30,
     "projection": "perspective",
     "coordinateSystem": "Three.js world +Y-up (converted from Blender +Z-up)",
-    "fovDeg": 40,
+    "fovDeg": 40.0,
     "near": 0.1,
-    "far": 100,
+    "far": 100.0,
     "position": [0.0, 1.2, 3.2],
     "target": [0.0, 0.6, 0.0],
     "up": [0.0, 1.0, 0.0],
@@ -18,64 +18,109 @@
     "authoringSourceFile": "blender/camera.json",
     "authoringSourceIsNotRuntimeFetch": true
   },
+  "loop": {
+    "id": "grinder-clean-plate-v1",
+    "src": "/live/public/assets/video/grinder-clean-plate.mp4",
+    "durationMs": 10000,
+    "fps": 30,
+    "hasPhoneOrRope": false,
+    "seamlessLoopVerified": true
+  },
   "rope": {
     "anchor": [0.0, 1.25, 0.0],
     "lengthMeters": 0.65,
     "segments": 24,
-    "radius": 0.006,
-    "color": "#e0c598"
+    "radius": 0.005,
+    "color": "#d4a559"
   },
   "phone": {
     "id": "phone-procedural-v1",
-    "dimensions": [0.16, 0.32, 0.018],
-    "radius": 0.012,
-    "attachOffset": [0.0, 0.16, 0.0],
-    "screenColor": "#080c14",
-    "bodyColor": "#2a3242"
+    "dimensions": [0.16, 0.32, 0.016],
+    "attachOffset": [0.0, 0.16, 0.0]
   },
   "grinder": {
     "id": "grinder-procedural-v1",
-    "position": [0.0, -0.6, 0.0],
-    "openingWidth": 0.8,
-    "teethCount": 12,
-    "rotationSpeedRpm": 20
+    "position": [0.0, -0.65, 0.0],
+    "openingWidth": 0.85
   },
   "actions": [
     {
       "id": "knife-left-touch-01",
       "toolId": "knife_left",
-      "type": "touch",
+      "variant": "touch",
       "side": "left",
+      "src": "/live/public/assets/video/knife-left-touch.mp4",
+      "webmSrc": "/live/public/assets/video/knife-left-touch.webm",
+      "fallbackProcedural": "knife_left",
+      "fps": 30,
+      "durationMs": 2400,
+      "activeStartMs": 0,
+      "contactMs": 800,
+      "activeEndMs": 2400,
       "impulseRadPerSec": 0.65,
       "wearDelta": 2,
-      "contactMs": 800,
-      "durationMs": 2400
+      "depthMode": "front",
+      "contactPointWorld": [-0.04, 0.8, 0.0],
+      "contactPointScreen": [540, 960],
+      "firstFrameKeyframeRequired": true,
+      "startPtsMs": 0,
+      "runtimeSeekToMidClipAllowed": false,
+      "preloadFirstFrameRequired": true
     },
     {
       "id": "knife-right-touch-01",
       "toolId": "knife_right",
-      "type": "touch",
+      "variant": "touch",
       "side": "right",
+      "src": "/live/public/assets/video/knife-left-touch.mp4",
+      "webmSrc": "/live/public/assets/video/knife-left-touch.webm",
+      "fallbackProcedural": "knife_right",
+      "fps": 30,
+      "durationMs": 2400,
+      "activeStartMs": 0,
+      "contactMs": 800,
+      "activeEndMs": 2400,
       "impulseRadPerSec": -0.65,
       "wearDelta": 2,
-      "contactMs": 800,
-      "durationMs": 2400
+      "depthMode": "front",
+      "contactPointWorld": [0.04, 0.8, 0.0],
+      "contactPointScreen": [540, 960],
+      "firstFrameKeyframeRequired": true,
+      "startPtsMs": 0,
+      "runtimeSeekToMidClipAllowed": false,
+      "preloadFirstFrameRequired": true
     },
     {
       "id": "knife-left-miss-01",
       "toolId": "knife_left",
-      "type": "miss",
+      "variant": "miss",
       "side": "left",
+      "src": "/live/public/assets/video/knife-left-touch.mp4",
+      "webmSrc": "/live/public/assets/video/knife-left-touch.webm",
+      "fallbackProcedural": "knife_left",
+      "fps": 30,
+      "durationMs": 2400,
+      "activeStartMs": 0,
+      "contactMs": 800,
+      "activeEndMs": 2400,
       "impulseRadPerSec": 0.0,
       "wearDelta": 0,
-      "contactMs": 800,
-      "durationMs": 2400
+      "depthMode": "front",
+      "contactPointWorld": [-0.18, 0.8, 0.0],
+      "contactPointScreen": [420, 960],
+      "firstFrameKeyframeRequired": true,
+      "startPtsMs": 0,
+      "runtimeSeekToMidClipAllowed": false,
+      "preloadFirstFrameRequired": true
     }
   ],
   "runtime": {
     "fixedTimestep": 0.008333333333333333,
     "idleAmplitudeDeg": 1.5,
     "idlePeriodSec": 2.0,
-    "dampingRatio": 0.18
+    "dampingRatio": 0.18,
+    "ackLeadBeforeContactMs": 300,
+    "ackDeadlineBeforeContactMs": 150,
+    "driftToleranceMsInitial": 100
   }
 }

@@ -1,5 +1,5 @@
 // Tests for Server Static Routing and Security Allowlist — TikTok LIVE Arcade
-// Covers: SEC-01, ASSET-01
+// Covers: SEC-01, ASSET-01, VIDEO-01, VIDEO-02
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -87,23 +87,35 @@ test('Static Routing & Security Allowlist', async (t) => {
     assert.ok(res.body.includes('OverlayApp'));
   });
 
-  await t.test('5. Serve /live/public/js/vendor/three.module.js -> 200 text/javascript', async () => {
+  await t.test('5. Serve /live/public/assets/video/grinder-clean-plate.mp4 -> 200 video/mp4 (VIDEO-01)', async () => {
+    const res = await request('/live/public/assets/video/grinder-clean-plate.mp4');
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.headers['content-type'].includes('video/mp4'));
+  });
+
+  await t.test('6. Serve /live/public/assets/video/knife-left-touch.mp4 -> 200 video/mp4 (VIDEO-02)', async () => {
+    const res = await request('/live/public/assets/video/knife-left-touch.mp4');
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.headers['content-type'].includes('video/mp4'));
+  });
+
+  await t.test('7. Serve /live/public/js/vendor/three.module.js -> 200 text/javascript', async () => {
     const res = await request('/live/public/js/vendor/three.module.js');
     assert.strictEqual(res.status, 200);
     assert.ok(res.headers['content-type'].includes('text/javascript'));
   });
 
-  await t.test('6. Block server code /live/server.mjs -> 404 (SEC-01)', async () => {
+  await t.test('8. Block server code /live/server.mjs -> 404 (SEC-01)', async () => {
     const res = await request('/live/server.mjs');
     assert.strictEqual(res.status, 404, 'Must return 404 for server source code');
   });
 
-  await t.test('7. Block config file /live/package.json -> 404 (SEC-01)', async () => {
+  await t.test('9. Block config file /live/package.json -> 404 (SEC-01)', async () => {
     const res = await request('/live/package.json');
     assert.strictEqual(res.status, 404, 'Must return 404 for package.json');
   });
 
-  await t.test('8. Block path traversal /live/../README.md -> 404 (SEC-01)', async () => {
+  await t.test('10. Block path traversal /live/../README.md -> 404 (SEC-01)', async () => {
     const res = await request('/live/../README.md');
     assert.strictEqual(res.status, 404, 'Must return 404 for directory traversal');
   });
