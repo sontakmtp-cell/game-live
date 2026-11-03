@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "1.1",
+  "status": "P0A_PROCEDURAL_PLACEHOLDER",
+  "sceneId": "industrial_phone_grinder_v1",
+  "camera": {
+    "id": "CAMERA_MAIN",
+    "resolution": [1080, 1920],
+    "fps": 30,
+    "projection": "perspective",
+    "coordinateSystem": "Three.js world +Y-up (converted from Blender +Z-up)",
+    "fovDeg": 40,
+    "near": 0.1,
+    "far": 100,
+    "position": [0.0, 1.2, 3.2],
+    "target": [0.0, 0.6, 0.0],
+    "up": [0.0, 1.0, 0.0],
+    "calibrationVerified": true,
+    "authoringSourceFile": "blender/camera.json",
+    "authoringSourceIsNotRuntimeFetch": true
+  },
+  "rope": {
+    "anchor": [0.0, 1.25, 0.0],
+    "lengthMeters": 0.65,
+    "segments": 24,
+    "radius": 0.006,
+    "color": "#e0c598"
+  },
+  "phone": {
+    "id": "phone-procedural-v1",
+    "dimensions": [0.16, 0.32, 0.018],
+    "radius": 0.012,
+    "attachOffset": [0.0, 0.16, 0.0],
+    "screenColor": "#080c14",
+    "bodyColor": "#2a3242"
+  },
+  "grinder": {
+    "id": "grinder-procedural-v1",
+    "position": [0.0, -0.6, 0.0],
+    "openingWidth": 0.8,
+    "teethCount": 12,
+    "rotationSpeedRpm": 20
+  },
+  "actions": [
+    {
+      "id": "knife-left-touch-01",
+      "toolId": "knife_left",
+      "type": "touch",
+      "side": "left",
+      "impulseRadPerSec": 0.65,
+      "wearDelta": 2,
+      "contactMs": 800,
+      "durationMs": 2400
+    },
+    {
+      "id": "knife-right-touch-01",
+      "toolId": "knife_right",
+      "type": "touch",
+      "side": "right",
+      "impulseRadPerSec": -0.65,
+      "wearDelta": 2,
+      "contactMs": 800,
+      "durationMs": 2400
+    },
+    {
+      "id": "knife-left-miss-01",
+      "toolId": "knife_left",
+      "type": "miss",
+      "side": "left",
+      "impulseRadPerSec": 0.0,
+      "wearDelta": 0,
+      "contactMs": 800,
+      "durationMs": 2400
+    }
+  ],
+  "runtime": {
+    "fixedTimestep": 0.008333333333333333,
+    "idleAmplitudeDeg": 1.5,
+    "idlePeriodSec": 2.0,
+    "dampingRatio": 0.18
+  }
+}
