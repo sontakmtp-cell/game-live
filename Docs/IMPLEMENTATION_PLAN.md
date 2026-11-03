@@ -302,8 +302,8 @@ Hệ thống kiểm thử được thiết kế dựa trên 24 kịch bản nghi
 - [x] Hiệu chuẩn căn chỉnh hình học camera giữa lớp 3D và lớp video plane (sai số mục tiêu < 5px tại vùng contact point).
 - [x] **Nghiệm thu P0B:** Đạo cụ vươn tới đúng vùng dây, không xuất hiện bóng ma hay hai dao, video loop không bị khởi động lại khi có action.
 
-### [ ] Task 3 — Event Engine & Server Authoritative (P1)
-- [ ] Tách biệt các module lõi:
+### [x] Task 3 — Event Engine & Server Authoritative (P1) (Đã hoàn thành)
+- [x] Tách biệt các module lõi:
   - `live/src/core/protocol.mjs`: Định nghĩa và kiểm tra cấu trúc thông điệp WebSocket v1.1.
   - `live/src/core/gift-normalizer.mjs`: Chuẩn hóa gift, gộp streak, chống trùng lặp (`EVT-01`).
   - `live/src/core/gift-map.mjs`: Cấu hình ánh xạ các loại quà tặng sang đạo cụ tương ứng.
@@ -314,8 +314,8 @@ Hệ thống kiểm thử được thiết kế dựa trên 24 kịch bản nghi
   - Cấp phát cookie session `HttpOnly; SameSite=Strict`, chuyển hướng 303 xóa token trên thanh địa chỉ.
   - Kiểm tra cookie session khi bắt tay WebSocket `/ws`, phân quyền `control` và cấp `rendererId` cho primary overlay (`SEC-02`).
   - Cập nhật bảng định tuyến tĩnh allowlist an toàn (`SEC-01`).
-- [ ] Viết bộ test tích hợp mô phỏng 100 sự kiện quà tặng dồn dập (`EVT-02`).
-- [ ] **Nghiệm thu P1:** Toàn bộ unit tests vượt qua, không bỏ rơi sự kiện, reload overlay nhận lại snapshot trơn tru, hết hạn ACK trước deadline thì không cộng độ sờn.
+- [x] Viết bộ test tích hợp mô phỏng 100 sự kiện quà tặng dồn dập (`EVT-02`).
+- [x] **Nghiệm thu P1:** Toàn bộ unit tests vượt qua, không bỏ rơi sự kiện, reload overlay nhận lại snapshot trơn tru, hết hạn ACK trước deadline thì không cộng độ sờn.
 
 ### [ ] Task 4 — Break Sequence & Quản trị Hoàn thiện (P1B)
 - [ ] Cập nhật FSM hỗ trợ trạng thái: `BREAKING` → `FALLING` → `CRUSH_SEQUENCE` → `RESETTING` → `IDLE`.

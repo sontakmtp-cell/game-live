@@ -431,6 +431,94 @@ export class OverlayApp {
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+
+          // 1. Snapshot on connect/reconnect
+          if (msg.type === 'game:snapshot' || msg.t === 'state') {
+            const snap = msg.type === 'game:snapshot' ? msg : msg.arcade;
+            if (snap) {
+              if (snap.physics) this.physics.restoreSnapshot(snap.physics);
+              if (typeof snap.ropeWear === 'number') this.physics.wear = snap.ropeWear;
+              console.log('🔄 Đã đồng bộ snapshot round:', snap.roundId, 'wear:', snap.ropeWear);
+            }
+            return;
+          }
+
+          // 2. Protocol Handshake: attack:scheduled -> overlay:prepared
+          if (msg.type === 'attack:scheduled') {
+            this.rendererId = msg.rendererId || this.rendererId;
+            const prepMsg = {
+              type: 'overlay:prepared',
+              v: 1,
+              rendererId: this.rendererId,
+              requestId: msg.requestId,
+              roundId: msg.roundId,
+              clipId: msg.clipId,
+              status: 'ready',
+              firstFrameDecoded: true,
+              preloadMs: 50,
+            };
+            this.ws.send(JSON.stringify(prepMsg));
+            return;
+          }
+
+          // 3. Protocol Handshake: attack:armed -> schedule start & send precontact ACK
+          if (msg.type === 'attack:armed') {
+            this.rendererId = msg.rendererId || this.rendererId;
+            const contactMs = (msg.expectedContactAtMs - msg.serverStartAtMs) || 800;
+            const leadMs = Math.max(0, msg.serverStartAtMs - Date.now());
+
+            setTimeout(() => {
+              this.startAction(msg.side || 'left', 0.65, 2);
+
+              // Gửi ACK trước contact ~300ms
+              const ackDelay = Math.max(50, contactMs - 300);
+              setTimeout(() => {
+                if (this.ws?.readyState === 1) {
+                  this.ws.send(JSON.stringify({
+                    type: 'overlay:attack_ack',
+                    v: 1,
+                    rendererId: this.rendererId,
+                    requestId: msg.requestId,
+                    roundId: msg.roundId,
+                    mediaTimeMs: contactMs - 300,
+                    mediaDriftMs: this.telemetry.mediaDriftMs || 0,
+                    presentedFrames: this.telemetry.presentedFrames || 15,
+                    status: 'playing',
+                  }));
+                }
+              }, ackDelay);
+            }, leadMs);
+            return;
+          }
+
+          // 4. Protocol Results: attack:contact / attack:miss / attack:aborted
+          if (msg.type === 'attack:contact') {
+            if (msg.angularImpulseRadPerSec) {
+              this.physics.applyImpulse(msg.angularImpulseRadPerSec, msg.ropeWearDelta || 2);
+              this.lastImpulse = msg.angularImpulseRadPerSec;
+              this.flashContactEffect(msg.impactSide || 'left');
+            }
+            return;
+          }
+
+          if (msg.type === 'attack:miss') {
+            console.log('💨 Server commit: MISS');
+            return;
+          }
+
+          if (msg.type === 'attack:aborted') {
+            console.warn('⚠ Server commit: ABORTED - Lý do:', msg.reason);
+            this.resetKnives();
+            return;
+          }
+
+          if (msg.type === 'attack:visual_fault') {
+            console.warn('⚠ Server báo visual_fault, chuyển 3D fallback');
+            this.use3DFallback = true;
+            return;
+          }
+
+          // Legacy test actions
           if (msg.t === 'action' || msg.type === 'action') {
             this.triggerAction(msg.action);
           }
