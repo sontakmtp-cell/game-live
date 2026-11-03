@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "1.1",
+  "status": "EXAMPLE_ONLY_FILES_NOT_CREATED",
+  "sceneId": "industrial_phone_grinder_v1",
+  "camera": {
+    "id": "CAMERA_MAIN",
+    "resolution": [
+      1080,
+      1920
+    ],
+    "fps": 30,
+    "projection": "perspective",
+    "coordinateSystem": "Three.js world +Y-up (converted from Blender +Z-up)",
+    "fovDeg": 40,
+    "near": 0.1,
+    "far": 100,
+    "position": [
+      0,
+      1.5,
+      3.5
+    ],
+    "target": [
+      0,
+      0.8,
+      0
+    ],
+    "up": [
+      0,
+      1,
+      0
+    ],
+    "calibrationVerified": false,
+    "valuesArePlaceholders": true,
+    "authoringSourceFile": "blender/camera.json",
+    "authoringSourceIsNotRuntimeFetch": true
+  },
+  "loop": {
+    "id": "grinder-clean-plate-v1",
+    "src": "/live/public/assets/video/grinder-clean-plate.mp4",
+    "durationMs": 10000,
+    "hasPhoneOrRope": false,
+    "seamlessLoopVerified": false
+  },
+  "phone": {
+    "id": "phone-v1",
+    "glb": "/live/public/assets/3d/phone.glb",
+    "ropeAnchorNode": "ROPE_ANCHOR",
+    "phoneAttachNode": "PHONE_ATTACH",
+    "initialRopeLengthMeters": 0.65
+  },
+  "actions": [
+    {
+      "id": "knife-left-miss-01",
+      "toolId": "knife_left",
+      "src": "/live/public/assets/video/knife-left-miss.webm",
+      "maskSrc": null,
+      "fallbackGlb": "/live/public/assets/3d/knife-left.glb",
+      "cameraId": "CAMERA_MAIN",
+      "fps": 30,
+      "durationMs": 2400,
+      "activeStartMs": 0,
+      "contactMs": 800,
+      "activeEndMs": 2400,
+      "depthMode": "front",
+      "variant": "miss",
+      "contactPointWorld": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "contactPointScreen": [
+        540,
+        900
+      ],
+      "contactScreenIsPlaceholder": true,
+      "validatedAlpha": false,
+      "validatedContact": false,
+      "sha256": null,
+      "firstFrameKeyframeRequired": true,
+      "startPtsMs": 0,
+      "runtimeSeekToMidClipAllowed": false,
+      "preloadFirstFrameRequired": true,
+      "sourceClipMetadata": {
+        "authoringFile": "blender/renders/knife-left-source-12s.mov",
+        "sourceDurationMs": 12000,
+        "sourceActiveStartMs": 3000,
+        "sourceContactMs": 4750,
+        "note": "This is source/edit metadata ONLY. Re-time and visually validate runtime contact at 800ms; no automatic marker subtraction."
+      },
+      "validatedTiming": false
+    },
+    {
+      "id": "knife-left-touch-01",
+      "toolId": "knife_left",
+      "src": "/live/public/assets/video/knife-left-touch.webm",
+      "maskSrc": null,
+      "fallbackGlb": "/live/public/assets/3d/knife-left.glb",
+      "cameraId": "CAMERA_MAIN",
+      "fps": 30,
+      "durationMs": 2400,
+      "activeStartMs": 0,
+      "contactMs": 800,
+      "activeEndMs": 2400,
+      "depthMode": "front",
+      "variant": "touch",
+      "contactPointWorld": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "contactPointScreen": [
+        540,
+        900
+      ],
+      "contactScreenIsPlaceholder": true,
+      "validatedAlpha": false,
+      "validatedContact": false,
+      "sha256": null,
+      "firstFrameKeyframeRequired": true,
+      "startPtsMs": 0,
+      "runtimeSeekToMidClipAllowed": false,
+      "preloadFirstFrameRequired": true,
+      "sourceClipMetadata": {
+        "authoringFile": "blender/renders/knife-left-source-12s.mov",
+        "sourceDurationMs": 12000,
+        "sourceActiveStartMs": 3000,
+        "sourceContactMs": 4750,
+        "note": "This is source/edit metadata ONLY. Re-time and visually validate runtime contact at 800ms; no automatic marker subtraction."
+      },
+      "validatedTiming": false
+    }
+  ],
+  "runtime": {
+    "videoStart": "play from 0 after preload; no runtime seeking to action markers",
+    "ackLeadBeforeContactMs": 300,
+    "ackDeadlineBeforeContactMs": 150,
+    "driftToleranceMsInitial": 100,
+    "timingMustBeBenchmarkedOnOBS": true,
+    "abortPolicy": "precommit abort only; postcommit visual_fault without undoing gameplay"
+  }
+}
