@@ -204,6 +204,14 @@ function onControl(m){
       applySettings(m.settings || {});
       scheduleChant(); broadcast({ t:'settings', settings, cap: capacity() }); break;
     case 'bots': setBots(!!m.on, +m.n || 12, m.pace); break;
+    case 'action': {
+      const valid = ['touch_left', 'touch_right', 'miss', 'reset', 'double_hit'];
+      if (valid.includes(m.action)) {
+        broadcast({ t:'action', action: m.action });
+        addLog(`🎮 Thử nghiệm đạo cụ: ${m.action}`);
+      }
+      break;
+    }
   }
 }
 
@@ -253,8 +261,8 @@ function setBots(on, n, pace){
 //  • static files: only /assets and /live, no dot-files, no node_modules, no server source, no path escapes
 //  • no TikTok password, cookie or session is ever used or stored; only public room events are read
 const HOST = process.env.HOST || '127.0.0.1';
-const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.json':'application/json',
-  '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.mp3':'audio/mpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
+const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.mjs':'text/javascript', '.css':'text/css', '.json':'application/json',
+  '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.mp3':'audio/mpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.mp4':'video/mp4', '.webm':'video/webm', '.glb':'model/gltf-binary' };
 const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`, `[::1]:${PORT}`]);
 const okHost = h => ALLOWED_HOSTS.has(String(h || '').toLowerCase());
 const SEP = path.sep;
@@ -262,6 +270,13 @@ function resolveStatic(urlPath){
   let p = urlPath === '/' ? '/live/control.html' : urlPath;
   if (!/^\/(assets|live)\//.test(p)) return null;
   if (p.split('/').some(seg => seg.startsWith('.') || seg === 'node_modules')) return null;
+  if (p.startsWith('/live/public/')) {
+    if (/\.(mjs|js|json|css|png|jpg|jpeg|webp|mp3|mp4|webm|glb)$/i.test(p)) {
+      const file = path.normalize(path.join(ROOT, p));
+      return file.startsWith(ROOT + SEP) ? file : null;
+    }
+    return null;
+  }
   if (/\.(mjs|json|md|log)$/i.test(p) && !p.startsWith('/assets/')) return null;      // never serve server code / package files
   const file = path.normalize(path.join(ROOT, p));
   if (!file.startsWith(ROOT + SEP)) return null;

@@ -1,0 +1,94 @@
+{
+  "authoringSource": "blender/master_scene.blend",
+  "id": "CAMERA_MAIN",
+  "resolution": [
+    1080,
+    1920
+  ],
+  "fps": 30,
+  "fovDeg": 40.0,
+  "near": 0.1,
+  "far": 100.0,
+  "blenderLocation": [
+    0.0,
+    -3.200000047683716,
+    1.2000000476837158
+  ],
+  "blenderRotationEulerDeg": [
+    79.3800009112138,
+    0.0,
+    0.0
+  ],
+  "threeJsWorld": {
+    "coordinateSystem": "Three.js world +Y-up",
+    "position": [
+      0.0,
+      1.2000000476837158,
+      3.200000047683716
+    ],
+    "target": [
+      0.0,
+      0.6,
+      0.0
+    ],
+    "up": [
+      0.0,
+      1.0,
+      0.0
+    ]
+  },
+  "emptiesBlender": {
+    "ROPE_ANCHOR": [
+      0.0,
+      0.0,
+      1.25
+    ],
+    "PHONE_ATTACH": [
+      0.0,
+      0.0,
+      0.6
+    ],
+    "GRINDER_OPENING": [
+      0.0,
+      0.0,
+      -0.6
+    ],
+    "TOOL_CONTACT_LEFT": [
+      -0.04,
+      0.0,
+      0.8
+    ],
+    "TOOL_CONTACT_RIGHT": [
+      0.04,
+      0.0,
+      0.8
+    ]
+  },
+  "emptiesThreeJs": {
+    "ROPE_ANCHOR": [
+      0.0,
+      1.25,
+      -0.0
+    ],
+    "PHONE_ATTACH": [
+      0.0,
+      0.6,
+      -0.0
+    ],
+    "GRINDER_OPENING": [
+      0.0,
+      -0.6,
+      -0.0
+    ],
+    "TOOL_CONTACT_LEFT": [
+      -0.04,
+      0.8,
+      -0.0
+    ],
+    "TOOL_CONTACT_RIGHT": [
+      0.04,
+      0.8,
+      -0.0
+    ]
+  }
+}
