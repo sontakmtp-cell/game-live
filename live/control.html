@@ -36,8 +36,6 @@ button.gold{background:#78350f;border-color:var(--gold)}
 button.gold:hover{background:#92400e}
 button.red{background:#7f1d1d;border-color:var(--red)}
 button.red:hover{background:#991b1b}
-.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--fg)}
-.check input{width:auto}
 #log{height:200px;overflow:auto;background:#090d14;border:1px solid var(--line);border-radius:10px;padding:8px;font:12px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 </style>
 </head>
@@ -47,15 +45,17 @@ button.red:hover{background:#991b1b}
   <div class="status">
     <span class="chip" id="srv">Server: …</span>
     <span class="chip" id="tt">TikTok: chưa kết nối</span>
-    <span class="chip" style="border-color:#38bdf8;color:#38bdf8">P0A: Realtime Physics</span>
+    <span class="chip" id="arcadeRound" style="border-color:#38bdf8;color:#38bdf8">Round 1</span>
+    <span class="chip" id="arcadeWear" style="border-color:var(--gold);color:var(--gold)">Wear: 0%</span>
+    <span class="chip" id="arcadeQueue">Queue: 0</span>
   </div>
 </header>
 
 <div class="grid">
-  <!-- 1. P0A Arcade Physics & Tool controls -->
+  <!-- 1. P0A/P1 Arcade Action & Queue Controls -->
   <section class="card" style="border-color: var(--gold); background: linear-gradient(180deg, #1e293b 0%, #151d2a 100%);">
-    <h2 style="color:var(--gold)">⚡ P0A · Điều Khiển Đạo Cụ & Vật Lý</h2>
-    <p class="hint">Thử nghiệm con lắc vật lý Three.js (+Y-up, dao động X-Y), xung lực va chạm và dao thử nghiệm (chạy độc lập không cần TikTok hay video AI).</p>
+    <h2 style="color:var(--gold)">⚡ Quản Trị Hàng Đợi & Đạo Cụ</h2>
+    <p class="hint">Thử nghiệm con lắc vật lý Three.js, hàng đợi bounded, bắt tay 2 pha (commit-once) và chống bỏ rơi sự kiện.</p>
     
     <div class="row">
       <button class="gold" id="btnActTouchL">⚡ Touch Trái (+0.65 rad/s)</button>
@@ -64,17 +64,23 @@ button.red:hover{background:#991b1b}
     
     <div class="row">
       <button id="btnActMiss">💨 Miss (Đánh hụt, wear=0)</button>
-      <button class="primary" id="btnActDouble">⚡⚡ Double Hit (Chạm kép liên tiếp)</button>
+      <button class="primary" id="btnActDouble">⚡⚡ Double Hit liên tiếp</button>
+    </div>
+
+    <h2>Quản lý Hàng Đợi (Queue Controls)</h2>
+    <div class="row">
+      <button id="btnQPause">⏸ Tạm Dừng Queue</button>
+      <button class="primary" id="btnQResume">▶ Tiếp Tục Queue</button>
+      <button id="btnQClear">🗑 Xóa Queue</button>
+    </div>
+    <div class="row">
+      <button class="gold" id="btnQSim100">🚀 Mô Phỏng 100 Quà Dồn Dập</button>
     </div>
 
     <div class="row">
-      <button class="red" id="btnActReset">↺ Reset Về Idle</button>
+      <button class="red" id="btnActReset">↺ Reset Về Idle & Round Mới</button>
       <button class="gold" id="btnOverlay">Mở Màn Hình Overlay 9:16</button>
     </div>
-
-    <p class="hint">
-      <b>Tiêu chí nghiệm thu P0A:</b> Phone đung đưa liên tục, cú hit thứ 2 cộng dồn xung lực vào vận tốc mà không teleport vị trí, dao động tắt dần êm dịu, miss không tăng độ sờn.
-    </p>
   </section>
 
   <!-- 2. Kết nối TikTok LIVE -->
@@ -84,7 +90,7 @@ button.red:hover{background:#991b1b}
     <div class="row"><input id="uid" placeholder="@tenkenhcuaban" autocomplete="off"><button class="primary" id="btnConnect">Kết nối</button><button id="btnDisconnect">Ngắt</button></div>
     <p class="hint">Chỉ đọc sự kiện công khai của phòng live (bình luận, quà, tim). Không cần mật khẩu hay cookie TikTok.</p>
     
-    <h2>2 · Thử tương tác giả lập</h2>
+    <h2>2 · Thử tặng quà giả lập</h2>
     <label for="simName">Tên người xem</label>
     <input id="simName" value="Người chơi thử">
     <div class="row">
@@ -92,11 +98,12 @@ button.red:hover{background:#991b1b}
       <button data-gift="Đèn hoa sen" data-dia="30">Hoa sen (30)</button>
       <button data-gift="Chuông vàng" data-dia="199">Chuông (199)</button>
     </div>
+    <p class="hint">Bình luận từ khóa <b>choi</b> để kích hoạt chơi thử miễn phí.</p>
   </section>
 
   <!-- 3. Âm thanh & Cài đặt -->
   <section class="card">
-    <h2>3 · Giọng đọc & Âm thanh</h2>
+    <h2>3 · Giọng đọc TTS</h2>
     <div class="row">
       <label>Giọng<select id="voice"><option value="vi-VN-NamMinhNeural">Nam Minh (nam)</option><option value="vi-VN-HoaiMyNeural">Hoài My (nữ)</option></select></label>
       <label>Độ trầm (Hz)<input id="pitch" type="number" step="1" value="-18"></label>
@@ -132,7 +139,23 @@ function connect(){
   ws.onmessage = e => {
     try {
       const m = JSON.parse(e.data);
-      if (m.t==='logs'){ $('log').textContent=''; m.lines.forEach(logLine); }
+      if (m.t==='state'){
+        setTT(m.tiktok);
+        if (m.arcade) {
+          $('arcadeRound').textContent = `Round ${m.arcade.roundId}`;
+          $('arcadeWear').textContent = `Wear: ${m.arcade.ropeWear}%`;
+          $('arcadeQueue').textContent = `Queue: ${m.arcade.queueLength}`;
+        }
+      }
+      else if (m.type === 'game:snapshot') {
+        $('arcadeRound').textContent = `Round ${m.roundId}`;
+        $('arcadeWear').textContent = `Wear: ${m.ropeWear}%`;
+        $('arcadeQueue').textContent = `Queue: ${m.queueLength}`;
+      }
+      else if (m.type === 'attack:contact') {
+        $('arcadeWear').textContent = `Wear: ${m.ropeWearTotal}%`;
+      }
+      else if (m.t==='logs'){ $('log').textContent=''; m.lines.forEach(logLine); }
       else if (m.t==='log') logLine(m.line);
       else if (m.t==='tiktok') setTT(m);
     } catch {}
@@ -140,12 +163,18 @@ function connect(){
 }
 connect();
 
-// P0A Arcade Action buttons
+// Arcade Action Buttons
 $('btnActTouchL').onclick = () => send('action', { action: 'touch_left' });
 $('btnActTouchR').onclick = () => send('action', { action: 'touch_right' });
 $('btnActMiss').onclick = () => send('action', { action: 'miss' });
 $('btnActDouble').onclick = () => send('action', { action: 'double_hit' });
 $('btnActReset').onclick = () => send('action', { action: 'reset' });
+
+// Queue Control Buttons
+$('btnQPause').onclick = () => send('queue:pause');
+$('btnQResume').onclick = () => send('queue:resume');
+$('btnQClear').onclick = () => send('queue:clear');
+$('btnQSim100').onclick = () => send('queue:sim100');
 
 // Overlay & TikTok buttons
 $('btnOverlay').onclick = () => window.open('/live/overlay.html', 'overlay916', 'width=540,height=960');

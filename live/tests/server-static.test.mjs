@@ -7,9 +7,10 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 
 let serverProc = null;
+let bootstrapToken = null;
 const TEST_PORT = 3099;
 
-function request(pathStr) {
+function request(pathStr, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -19,6 +20,7 @@ function request(pathStr) {
         method: 'GET',
         headers: {
           Host: `127.0.0.1:${TEST_PORT}`,
+          ...headers,
         },
       },
       (res) => {
@@ -43,6 +45,8 @@ test('Static Routing & Security Allowlist', async (t) => {
 
     serverProc.stdout.on('data', (d) => {
       const msg = d.toString();
+      const match = msg.match(/token=([a-f0-9]{64})/);
+      if (match) bootstrapToken = match[1];
       if (msg.includes('Server chạy tại')) {
         resolve();
       }
@@ -64,11 +68,23 @@ test('Static Routing & Security Allowlist', async (t) => {
     assert.ok(res.body.includes('three-canvas'));
   });
 
-  await t.test('2. Serve control.html -> 200 text/html', async () => {
-    const res = await request('/live/control.html');
-    assert.strictEqual(res.status, 200);
-    assert.ok(res.headers['content-type'].includes('text/html'));
-    assert.ok(res.body.includes('P0A · Điều Khiển Đạo Cụ'));
+  await t.test('2. Serve control.html -> 403 without auth, 200 with session cookie (SEC-02/03)', async () => {
+    // Không có cookie -> 403
+    const resNoAuth = await request('/live/control.html');
+    assert.strictEqual(resNoAuth.status, 403);
+
+    // Dùng bootstrap token -> 303 và cấp session cookie
+    assert.ok(bootstrapToken);
+    const resAuth = await request(`/live/control.html?token=${bootstrapToken}`);
+    assert.strictEqual(resAuth.status, 303);
+    const setCookie = resAuth.headers['set-cookie']?.[0] || '';
+    const cookie = setCookie.split(';')[0];
+
+    // Có cookie hợp lệ -> 200 OK
+    const resWithCookie = await request('/live/control.html', { Cookie: cookie });
+    assert.strictEqual(resWithCookie.status, 200);
+    assert.ok(resWithCookie.headers['content-type'].includes('text/html'));
+    assert.ok(resWithCookie.body.includes('Bảng điều khiển'));
   });
 
   await t.test('3. Serve /live/public/asset-manifest.json -> 200 application/json (ASSET-01)', async () => {
@@ -99,10 +115,14 @@ test('Static Routing & Security Allowlist', async (t) => {
     assert.ok(res.headers['content-type'].includes('video/mp4'));
   });
 
-  await t.test('7. Serve /live/public/js/vendor/three.module.js -> 200 text/javascript', async () => {
+  await t.test('7. Serve /live/public/js/vendor/three.module.js & three.core.js -> 200 text/javascript', async () => {
     const res = await request('/live/public/js/vendor/three.module.js');
     assert.strictEqual(res.status, 200);
     assert.ok(res.headers['content-type'].includes('text/javascript'));
+
+    const resCore = await request('/live/public/js/vendor/three.core.js');
+    assert.strictEqual(resCore.status, 200);
+    assert.ok(resCore.headers['content-type'].includes('text/javascript'));
   });
 
   await t.test('8. Block server code /live/server.mjs -> 404 (SEC-01)', async () => {

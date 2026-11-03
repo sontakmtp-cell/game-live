@@ -1,114 +1,121 @@
-// Chánh Điện Tịnh Tâm — live server
-// Runs on the streaming PC. Serves the overlay + control panel, listens to a TikTok LIVE room,
-// keeps the list of seated viewers, generates Vietnamese voice lines with Edge TTS and pushes
-// everything to the overlay over WebSocket.
-//
-//   cd live && npm install && node server.mjs        → http://localhost:3000/live/control.html
-//
+// TikTok LIVE Arcade & Live Server (v1.1)
+// Spec: TECHNICAL_SPEC.md v1.1
+// Serves Overlay + Control Panel, WebSocket /ws, Local Admin Auth, Gift Normalizer & Attack Scheduler.
+
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
+import { GameState } from './src/core/game-state.mjs';
+import { AttackScheduler } from './src/core/attack-scheduler.mjs';
+import { GiftNormalizer } from './src/core/gift-normalizer.mjs';
+import { Protocol, MESSAGE_TYPES, validateClientMessage } from './src/core/protocol.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');            // repo root: serves /assets, /live
+const ROOT = path.resolve(__dirname, '..');
 const TTS_DIR = path.join(__dirname, 'tts');
 fs.mkdirSync(TTS_DIR, { recursive: true });
 for (const f of fs.readdirSync(TTS_DIR)) { try { fs.unlinkSync(path.join(TTS_DIR, f)); } catch {} }
-const PORT = +process.env.PORT || 3000;
 
-/* ------------------------------------------------------------------ state */
+const PORT = +process.env.PORT || 3000;
+const HOST = process.env.HOST || '127.0.0.1';
+
+/* ----------------------------------------------------------- Local Admin Auth (SEC-02, SEC-03) */
+// Token bootstrap ngẫu nhiên 256-bit dùng 1 lần trong RAM
+export let bootstrapToken = crypto.randomBytes(32).toString('hex');
+export const validSessions = new Set();
+
+/* ----------------------------------------------------------- Arcade Core Engines (P1) */
+export const gameState = new GameState();
+export const scheduler = new AttackScheduler({
+  gameState,
+  broadcast: (msg) => broadcast(msg),
+});
+export const giftNormalizer = new GiftNormalizer();
+giftNormalizer.onActionReady = (action) => scheduler.enqueue(action);
+
+// Ticker vật lý 1/120s ở server
+setInterval(() => {
+  gameState.tick(1 / 120);
+}, 1000 / 120);
+
+/* ------------------------------------------------------------------ Legacy Live State */
 const settings = {
-  title: 'Chánh Điện Tịnh Tâm',
-  subtitle: 'Nam Mô A Di Đà Phật',
-  voice: 'vi-VN-NamMinhNeural',      // or vi-VN-HoaiMyNeural
-  pitch: -18,                        // Hz
-  rate: -20,                         // %
-  music: true, mo: true, moBpm: 52,
-  autoChant: true, chantEveryMin: 3,
-  seatMode: 'auto',                  // auto | 24 | 36 | 64 | 100
-  joinOnEnter: false,                // also seat viewers who only enter the room
+  title: 'TikTok LIVE Arcade',
+  subtitle: 'Mô Phỏng 3D',
+  voice: 'vi-VN-NamMinhNeural',
+  pitch: -18,
+  rate: -20,
+  music: false, mo: false, moBpm: 52,
+  autoChant: false, chantEveryMin: 3,
+  seatMode: 'auto',
+  joinOnEnter: false,
   gifts: { readAll: true, minDiamonds: 1 },
 };
-const viewers = new Map();           // id -> { id, name, skin, avatar, coins, joinedAt, lastAt, lastText, lastTextAt, demo }
+const viewers = new Map();
 const startedAt = Date.now();
 let tiktok = null, tiktokState = { status: 'idle', uniqueId: '', error: '' };
 const log = [];
 function addLog(s){ const line = `[${new Date().toLocaleTimeString('vi-VN')}] ${s}`; log.push(line); if (log.length > 300) log.shift(); broadcast({ t:'log', line }, 'control'); console.log(line); }
 
-const CAPS = [24, 36, 64, 100];
-function capacity(){ if (settings.seatMode !== 'auto') return +settings.seatMode; const n = viewers.size; return CAPS.find(c => n <= c) || 100; }
-
-/* skins: sprites that exist in /assets. Walking strips exist for man / woman / granny. */
-// A comment changes the outfit only when it IS the keyword (≤ 3 words), so "Nam mô A Di Đà Phật" never reads as "nam".
-const SKIN_WORDS = [
-  ['master', ['cao tăng','cao tang']], ['monk', ['sư','su','sư thầy','su thay','thầy','thay']], ['nun', ['ni','ni cô','ni co','sư cô','su co']],
-  ['child', ['tiểu','tieu','chú tiểu','chu tieu','bé','be']], ['granny', ['bà','ba','áo nâu','ao nau','cụ','cu']],
-  ['woman', ['nữ','nu','chị','chi','gái','gai']], ['man', ['nam','anh','trai']],
-];
-function skinFromText(t){
-  const w = String(t).toLowerCase().normalize('NFC').replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
-  if (!w || w.split(' ').length > 3) return null;
-  for (const [skin, words] of SKIN_WORDS) if (words.some(k => w === k || w.startsWith(k + ' '))) return skin;
-  return null;
+function capacity(){ return 100; }
+function snapshot(){
+  return {
+    t: 'state',
+    settings,
+    viewers: [...viewers.values()],
+    cap: capacity(),
+    startedAt,
+    tiktok: tiktokState,
+    arcade: gameState.getSnapshot(scheduler.queue.length),
+  };
 }
-const DEFAULT_SKINS = ['man', 'woman', 'woman', 'man', 'granny'];
-
-function pub(v){ return { id:v.id, name:v.name, skin:v.skin, avatar:v.avatar||'', coins:v.coins, demo:!!v.demo }; }
-function snapshot(){ return { t:'state', settings, viewers:[...viewers.values()].map(pub), cap: capacity(), startedAt, tiktok: tiktokState }; }
 
 function seat(id, name, opts = {}){
   let v = viewers.get(id);
-  if (v){ v.lastAt = Date.now(); if (opts.avatar) v.avatar = opts.avatar; return { v, isNew:false }; }
-  if (viewers.size >= 100){                     // full: the longest-quiet non-donor stands up
-    const quiet = [...viewers.values()].filter(x => x.coins === 0).sort((a,b) => a.lastAt - b.lastAt)[0];
-    if (!quiet) return { v:null, isNew:false };
-    viewers.delete(quiet.id); broadcast({ t:'leave', id: quiet.id });
-  }
-  v = { id, name: (name||id).slice(0, 18), skin: opts.skin || DEFAULT_SKINS[viewers.size % DEFAULT_SKINS.length],
-        avatar: opts.avatar || '', coins: 0, joinedAt: Date.now(), lastAt: Date.now(), demo: !!opts.demo };
+  if (v){ v.lastAt = Date.now(); return { v, isNew:false }; }
+  v = { id, name: (name||id).slice(0, 18), coins: 0, joinedAt: Date.now(), lastAt: Date.now() };
   viewers.set(id, v);
-  broadcast({ t:'join', v: pub(v), cap: capacity() });
   return { v, isNew:true };
 }
 
-/* ------------------------------------------------------------- events in */
-function onChat(id, name, text, avatar){
+/* ------------------------------------------------------------- Events In */
+function onChat(id, name, text){
   text = String(text || '').slice(0, 120);
-  const want = skinFromText(text);
-  const { v, isNew } = seat(id, name, { avatar, skin: want || undefined });
+  const { v } = seat(id, name);
   if (!v) return;
-  if (!isNew && want && want !== v.skin){ v.skin = want; broadcast({ t:'skin', id, skin: want }); }
-  v.lastText = text; v.lastTextAt = Date.now();
   broadcast({ t:'chat', id, name: v.name, text });
+
+  // Nhận lệnh 'choi' để kích hoạt demo miễn phí
+  const clean = text.trim().toLowerCase();
+  if (clean === 'choi' || clean === 'chơi' || clean === 'play') {
+    scheduler.enqueue({
+      requestId: `req_chat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      user: { id, displayName: v.name },
+      count: 1,
+      diamonds: 1,
+      action: { toolId: 'knife_left', side: 'left', contactMs: 800, durationMs: 2400, impulseRadPerSec: 0.65, wearDelta: 2 },
+    });
+    addLog(`🎮 ${v.name} kích hoạt chơi thử qua bình luận`);
+  }
 }
 
-function onGift(id, name, giftName, count, diamonds, avatar){
-  giftName = String(giftName || 'quà').slice(0, 30); count = Math.max(1, Math.min(9999, +count || 1));
-  const { v } = seat(id, name, { avatar });
+function onGift(id, name, giftName, count, diamonds){
+  const { v } = seat(id, name);
   if (!v) return;
   const coins = Math.max(1, (diamonds || 1) * (count || 1));
   v.coins += coins;
-  const prayer = (v.lastText && Date.now() - v.lastTextAt < 90_000 && v.lastText.length > 6) ? v.lastText : pickPrayer();
-  const tier = coins >= 99 ? 3 : coins >= 10 ? 2 : 1;
-  const line = `Nam mô A Di Đà Phật. Phật tử ${spoken(v.name)} thành tâm dâng ${giftName}${count > 1 ? ', ' + count + ' lần' : ''}. ${prayer}.`;
-  broadcast({ t:'gift', id, name: v.name, giftName, count, coins, total: v.coins, tier, prayer });
-  if (settings.gifts.readAll || coins >= settings.gifts.minDiamonds) say(line, { tag:'gift', id });
+  addLog(`🎁 ${v.name} tặng ${giftName} x${count}`);
 }
-
-function pickPrayer(){
-  const P = ['Nguyện cầu gia đạo bình an, vạn sự cát tường', 'Nguyện cầu cha mẹ mạnh khỏe, sống lâu', 'Nguyện hồi hướng công đức cho khắp pháp giới chúng sinh',
-             'Nguyện cầu thân tâm an lạc, phiền não tiêu trừ', 'Nguyện cầu công việc hanh thông, gia đình hạnh phúc'];
-  return P[Math.floor(Math.random() * P.length)];
-}
-const spoken = s => String(s).replace(/[_@.]+/g, ' ').replace(/[^\p{L}\p{N}\s]/gu, '').trim() || 'ẩn danh';
 
 /* ------------------------------------------------------------------ TTS */
 const ttsQueue = []; let ttsBusy = false, ttsSeq = 0;
 function esc(s){ return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c])); }
-function say(text, meta = {}){ if (ttsQueue.length >= 15) { addLog('Hàng đợi giọng đọc đầy, bỏ qua 1 câu'); return; } ttsQueue.push({ text: String(text).slice(0, 500), meta }); pumpTTS(); }
+function say(text, meta = {}){ if (ttsQueue.length >= 15) return; ttsQueue.push({ text: String(text).slice(0, 500), meta }); pumpTTS(); }
 async function pumpTTS(){
   if (ttsBusy || !ttsQueue.length) return; ttsBusy = true;
   const { text, meta } = ttsQueue.shift();
@@ -122,21 +129,9 @@ async function pumpTTS(){
     try { tts.close(); } catch {}
     fs.writeFileSync(path.join(TTS_DIR, file), Buffer.concat(chunks));
     broadcast({ t:'tts', url: `/live/tts/${file}`, text, ...meta });
-    const old = fs.readdirSync(TTS_DIR).sort(); while (old.length > 40) { try { fs.unlinkSync(path.join(TTS_DIR, old.shift())); } catch {} }
   } catch (e) { addLog('TTS lỗi: ' + (e?.message || e)); }
   ttsBusy = false; setTimeout(pumpTTS, 50);
 }
-
-const CHANTS = [
-  'Nam mô Bổn Sư Thích Ca Mâu Ni Phật. Nguyện đem công đức này, hướng về khắp tất cả, đệ tử và chúng sinh, đều trọn thành Phật đạo.',
-  'Nam mô A Di Đà Phật. Nguyện sanh Tây Phương Tịnh Độ trung, cửu phẩm liên hoa vi phụ mẫu.',
-  'Nam mô Đại Bi Quán Thế Âm Bồ Tát. Nguyện cho tất cả chúng sinh thân tâm an lạc, tai qua nạn khỏi.',
-  'Quán Tự Tại Bồ Tát hành thâm Bát Nhã Ba La Mật Đa thời, chiếu kiến ngũ uẩn giai không, độ nhất thiết khổ ách.',
-];
-let chantIdx = 0, chantTimer = null;
-function chant(){ const text = CHANTS[chantIdx++ % CHANTS.length]; broadcast({ t:'chant', text }); say(text, { tag:'chant' }); }
-function scheduleChant(){ clearInterval(chantTimer); if (settings.autoChant) chantTimer = setInterval(chant, Math.max(1, settings.chantEveryMin) * 60_000); }
-scheduleChant();
 
 /* --------------------------------------------------------------- TikTok */
 let TikTokLib = null;
@@ -149,24 +144,34 @@ async function connectTikTok(uniqueId){
     TikTokLib ||= await import('tiktok-live-connector');
     const { TikTokLiveConnection, WebcastEvent, ControlEvent } = TikTokLib;
     const conn = new TikTokLiveConnection(uniqueId, { enableExtendedGiftInfo: true, processInitialData: false });
-    const av = u => u?.profilePicture?.url?.[0] || u?.profilePicture?.urlList?.[0] || u?.avatarThumb?.urlList?.[0] || u?.avatarThumb?.url?.[0] || '';
     const nm = u => u?.nickname || u?.uniqueId || 'ẩn danh';
-    conn.on(WebcastEvent.CHAT, d => onChat(d.user?.uniqueId || d.user?.userId, nm(d.user), d.comment, av(d.user)));
+    conn.on(WebcastEvent.CHAT, d => onChat(d.user?.uniqueId || d.user?.userId, nm(d.user), d.comment));
     conn.on(WebcastEvent.GIFT, d => {
       const type = d.giftDetails?.giftType ?? d.extendedGiftInfo?.type;
-      if (type === 1 && !d.repeatEnd) return;                       // streak still running
       const gname = d.giftDetails?.giftName || d.extendedGiftInfo?.name || 'quà';
       const dia = d.giftDetails?.diamondCount ?? d.extendedGiftInfo?.diamond_count ?? 1;
-      onGift(d.user?.uniqueId || d.user?.userId, nm(d.user), gname, d.repeatCount || 1, dia, av(d.user));
-      addLog(`🎁 ${nm(d.user)} tặng ${gname} x${d.repeatCount || 1}`);
+
+      // Đưa vào GiftNormalizer để xử lý streak và gộp combo (EVT-01)
+      giftNormalizer.processGiftEvent({
+        userId: d.user?.uniqueId || d.user?.userId,
+        nickname: nm(d.user),
+        giftId: d.giftDetails?.giftId || gname,
+        giftName: gname,
+        giftType: type,
+        repeatCount: d.repeatCount || 1,
+        repeatEnd: d.repeatEnd,
+        diamondCount: dia,
+      });
+
+      if (type !== 1 || d.repeatEnd) {
+        onGift(d.user?.uniqueId || d.user?.userId, nm(d.user), gname, d.repeatCount || 1, dia);
+      }
     });
-    conn.on(WebcastEvent.MEMBER, d => { if (settings.joinOnEnter) seat(d.user?.uniqueId, nm(d.user), { avatar: av(d.user) }); });
-    conn.on(WebcastEvent.LIKE, d => broadcast({ t:'like', id: d.user?.uniqueId, n: d.likeCount || 1 }));
     conn.on(ControlEvent.DISCONNECTED, () => { tiktokState = { ...tiktokState, status: 'disconnected' }; broadcast({ t:'tiktok', ...tiktokState }); addLog('TikTok: mất kết nối'); });
     conn.on(ControlEvent.ERROR, e => addLog('TikTok lỗi: ' + (e?.info || e?.message || e)));
-    const st = await conn.connect();
+    await conn.connect();
     tiktok = conn;
-    tiktokState = { status: 'connected', uniqueId, error: '', roomId: st?.roomId || '' };
+    tiktokState = { status: 'connected', uniqueId, error: '' };
     addLog(`✅ Đã kết nối live @${uniqueId}`);
   } catch (e) {
     tiktokState = { status: 'error', uniqueId, error: String(e?.message || e) };
@@ -176,100 +181,101 @@ async function connectTikTok(uniqueId){
 }
 async function disconnectTikTok(){ if (tiktok){ try { await tiktok.disconnect(); } catch {} tiktok = null; } tiktokState = { status:'idle', uniqueId:'', error:'' }; broadcast({ t:'tiktok', ...tiktokState }); }
 
-/* ------------------------------------------------------------- test data */
-const DEMO_NAMES = ['Diệu Hạnh','Minh Tâm','Thiện Đức','Huệ An','Tịnh Nhã','Quảng Trí','Chơn Như','Pháp Hỷ','Nguyên Thanh','Tâm Đăng','Diệu Liên','Trí Hải','Phước Lộc','Hạnh Nguyện','Như Ý','Bảo Châu','Thanh Lương','Từ Tâm','An Lạc','Giác Hoa','Tuệ Minh','Liên Hương','Thu Hà','Ngọc Lan','Đức Anh','Hải Đăng','Mai Anh','Phương Thảo','Trung Kiên','Quang Huy','Bảo Ngọc','Diệu Linh'];
-function fillDemo(n){
-  const have = [...viewers.values()].filter(v => v.demo).length;
-  for (let i = have; i < n && viewers.size < 100; i++){
-    const name = DEMO_NAMES[i % DEMO_NAMES.length] + (i >= DEMO_NAMES.length ? ' ' + (Math.floor(i / DEMO_NAMES.length) + 1) : '');
-    seat('demo_' + i, name, { demo: true, skin: ['man','woman','woman','man','granny','monk','nun','child'][i % 8] });
-  }
-}
-function clearSeats(){ viewers.clear(); broadcast(snapshot()); addLog('Đã làm trống bồ đoàn'); }
-
-/* ------------------------------------------------------------- control */
+/* ------------------------------------------------------------- Control Panel Commands */
 function onControl(m){
   switch (m.cmd){
     case 'connect': connectTikTok(m.uniqueId); break;
     case 'disconnect': disconnectTikTok(); addLog('Đã ngắt kết nối TikTok'); break;
-    case 'chat': { const n = String(m.name || 'Khách').slice(0, 18); onChat('sim_' + n, n, String(m.text || 'Nam mô A Di Đà Phật').slice(0, 120)); break; }
-    case 'gift': { const n = String(m.name || 'Khách').slice(0, 18); onGift('sim_' + n, n, String(m.gift || 'Hoa hồng').slice(0, 30), clamp(m.count, 1, 99), clamp(m.diamonds, 1, 50000)); break; }
-    case 'fill': fillDemo(clamp(m.n, 1, 100)); addLog(`Đổ người mẫu: ${viewers.size} người`); break;
-    case 'clear': clearSeats(); break;
-    case 'bell': broadcast({ t:'bell' }); break;
-    case 'mo': broadcast({ t:'mo1' }); break;
-    case 'chant': chant(); break;
-    case 'say': if (m.text) say(String(m.text).slice(0, 400), { tag:'say' }); break;
-    case 'settings':
-      applySettings(m.settings || {});
-      scheduleChant(); broadcast({ t:'settings', settings, cap: capacity() }); break;
-    case 'bots': setBots(!!m.on, +m.n || 12, m.pace); break;
+    case 'chat': { const n = String(m.name || 'Khách').slice(0, 18); onChat('sim_' + n, n, String(m.text || 'choi').slice(0, 120)); break; }
+    case 'gift': {
+      const n = String(m.name || 'Người chơi').slice(0, 18);
+      giftNormalizer.processGiftEvent({
+        userId: 'sim_' + n,
+        nickname: n,
+        giftName: m.gift || 'Hoa hồng',
+        diamondCount: m.diamonds || 1,
+        repeatCount: m.count || 1,
+        repeatEnd: true,
+      });
+      break;
+    }
     case 'action': {
       const valid = ['touch_left', 'touch_right', 'miss', 'reset', 'double_hit'];
       if (valid.includes(m.action)) {
-        broadcast({ t:'action', action: m.action });
+        if (m.action === 'reset') {
+          gameState.resetRound();
+          scheduler.clearQueue();
+          broadcast({ t:'action', action: 'reset' });
+          addLog('↺ Đã reset vật lý và round');
+        } else if (m.action === 'double_hit') {
+          scheduler.enqueue({
+            requestId: `req_act_${Date.now()}_1`,
+            user: { id: 'admin', displayName: 'Admin' },
+            count: 1, diamonds: 1,
+            action: { toolId: 'knife_left', side: 'left', contactMs: 800, durationMs: 2400, impulseRadPerSec: 0.65, wearDelta: 2 },
+          });
+          scheduler.enqueue({
+            requestId: `req_act_${Date.now()}_2`,
+            user: { id: 'admin', displayName: 'Admin' },
+            count: 1, diamonds: 1,
+            action: { toolId: 'knife_right', side: 'right', contactMs: 800, durationMs: 2400, impulseRadPerSec: -0.65, wearDelta: 2 },
+          });
+        } else {
+          const side = m.action === 'touch_right' ? 'right' : 'left';
+          const isMiss = m.action === 'miss';
+          scheduler.enqueue({
+            requestId: `req_act_${Date.now()}`,
+            user: { id: 'admin', displayName: 'Admin' },
+            count: 1, diamonds: 1,
+            action: {
+              toolId: `knife_${side}`,
+              side,
+              variant: isMiss ? 'miss' : 'touch',
+              contactMs: 800, durationMs: 2400,
+              impulseRadPerSec: isMiss ? 0 : (side === 'left' ? 0.65 : -0.65),
+              wearDelta: isMiss ? 0 : 2,
+            },
+          });
+        }
         addLog(`🎮 Thử nghiệm đạo cụ: ${m.action}`);
       }
       break;
     }
+    case 'queue:pause': scheduler.pause(); addLog('⏸ Đã tạm dừng hàng đợi'); break;
+    case 'queue:resume': scheduler.resume(); addLog('▶ Đã tiếp tục hàng đợi'); break;
+    case 'queue:clear': scheduler.clearQueue(); addLog('🗑 Đã làm sạch hàng đợi'); break;
+    case 'queue:sim100': {
+      addLog('🚀 Mô phỏng 100 sự kiện quà tặng liên tục...');
+      for (let i = 0; i < 100; i++) {
+        scheduler.enqueue({
+          requestId: `req_sim100_${i}`,
+          user: { id: `u_${i % 10}`, displayName: `Viewer ${i % 10}` },
+          count: 1, diamonds: 1,
+          action: { toolId: 'knife_left', side: i % 2 === 0 ? 'left' : 'right', contactMs: 800, durationMs: 2400 },
+        });
+      }
+      break;
+    }
+    case 'say': if (m.text) say(String(m.text).slice(0, 400), { tag:'say' }); break;
   }
 }
 
-// Only known keys, right types, sane ranges: the panel is local, but nothing from the socket is trusted blindly.
-const SETTING_RULES = {
-  title: v => String(v).slice(0, 40), subtitle: v => String(v).slice(0, 60),
-  voice: v => ['vi-VN-NamMinhNeural', 'vi-VN-HoaiMyNeural'].includes(v) ? v : settings.voice,
-  pitch: v => clamp(v, -50, 50), rate: v => clamp(v, -50, 50), moBpm: v => clamp(v, 20, 120), chantEveryMin: v => clamp(v, 1, 60),
-  music: Boolean, mo: Boolean, autoChant: Boolean, joinOnEnter: Boolean,
-  seatMode: v => ['auto', '24', '36', '64', '100'].includes(String(v)) ? String(v) : 'auto',
+/* -------------------------------------------------------------- HTTP & Security */
+const MIME = {
+  '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.mjs':'text/javascript', '.css':'text/css', '.json':'application/json',
+  '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.mp3':'audio/mpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon',
+  '.mp4':'video/mp4', '.webm':'video/webm', '.glb':'model/gltf-binary',
 };
-const clamp = (v, a, b) => Math.max(a, Math.min(b, Math.round(+v || 0)));
-function applySettings(o){ for (const [k, fn] of Object.entries(SETTING_RULES)) if (k in o) settings[k] = fn(o[k]); }
-
-/* ----------------------------------------------------------------- bots */
-let botTimer = null;
-const BOT_LINES = ['Nam mô A Di Đà Phật', 'Nam mô Bổn Sư Thích Ca Mâu Ni Phật', 'Cầu cho gia đình bình an', 'Con xin thành tâm sám hối', 'nữ', 'nam', 'bà',
-  'Nguyện cầu cha mẹ mạnh khỏe', 'Mô Phật, an lạc quá', 'Chúc mọi người một ngày bình an', 'sư', 'Cầu công việc hanh thông'];
-function setBots(on, n, pace){
-  clearInterval(botTimer); botTimer = null;
-  if (on){
-    n = clamp(n, 1, 100);
-    for (let i = 0; i < n; i++) seat('bot_' + i, DEMO_NAMES[(i + 7) % DEMO_NAMES.length] + ' ·bot', { demo: true });
-    const every = { slow: 4000, mid: 1800, fast: 700 }[pace] || 1800;
-    botTimer = setInterval(() => {
-      const ids = [...viewers.keys()].filter(id => id.startsWith('bot_')); if (!ids.length) return;
-      const id = ids[Math.floor(Math.random() * ids.length)], v = viewers.get(id), r = Math.random();
-      if (r < .62) onChat(id, v.name, BOT_LINES[Math.floor(Math.random() * BOT_LINES.length)]);
-      else if (r < .9) broadcast({ t:'like', id, n: 1 + Math.floor(Math.random() * 4) });
-      else if (r < .985) onGift(id, v.name, 'Hoa hồng', 1 + Math.floor(Math.random() * 3), 1);
-      else onGift(id, v.name, 'Đèn hoa sen', 1, 99);
-    }, every);
-    addLog(`🤖 Bật ${n} bot, nhịp ${pace}`);
-  } else {
-    for (const id of [...viewers.keys()]) if (id.startsWith('bot_')) { viewers.delete(id); broadcast({ t:'leave', id }); }
-    addLog('🤖 Tắt bot');
-  }
-  broadcast({ t:'bots', on }, 'control');
-}
-
-/* -------------------------------------------------------------- server */
-// Security notes (this file is meant to be shared publicly):
-//  • listens on 127.0.0.1 only; nothing is reachable from the LAN or internet unless HOST is changed on purpose
-//  • Host header must be localhost/127.0.0.1 (blocks DNS-rebinding pages from talking to the server)
-//  • WebSocket only accepts pages served by this server (Origin check), so other sites open in the
-//    same browser cannot send control commands
-//  • static files: only /assets and /live, no dot-files, no node_modules, no server source, no path escapes
-//  • no TikTok password, cookie or session is ever used or stored; only public room events are read
-const HOST = process.env.HOST || '127.0.0.1';
-const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.mjs':'text/javascript', '.css':'text/css', '.json':'application/json',
-  '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.mp3':'audio/mpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.mp4':'video/mp4', '.webm':'video/webm', '.glb':'model/gltf-binary' };
 const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`, `[::1]:${PORT}`]);
 const okHost = h => ALLOWED_HOSTS.has(String(h || '').toLowerCase());
 const SEP = path.sep;
+
 function resolveStatic(urlPath){
   let p = urlPath === '/' ? '/live/control.html' : urlPath;
   if (!/^\/(assets|live)\//.test(p)) return null;
   if (p.split('/').some(seg => seg.startsWith('.') || seg === 'node_modules')) return null;
+
+  // Allow static assets under /live/public/
   if (p.startsWith('/live/public/')) {
     if (/\.(mjs|js|json|css|png|jpg|jpeg|webp|mp3|mp4|webm|glb)$/i.test(p)) {
       const file = path.normalize(path.join(ROOT, p));
@@ -277,39 +283,188 @@ function resolveStatic(urlPath){
     }
     return null;
   }
-  if (/\.(mjs|json|md|log)$/i.test(p) && !p.startsWith('/assets/')) return null;      // never serve server code / package files
+
+  if (/\.(mjs|json|md|log)$/i.test(p) && !p.startsWith('/assets/')) return null;
   const file = path.normalize(path.join(ROOT, p));
   if (!file.startsWith(ROOT + SEP)) return null;
   return file;
 }
+
 const server = http.createServer((req, res) => {
   if (!okHost(req.headers.host)) { res.writeHead(421).end('wrong host'); return; }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
-  let p; try { p = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.writeHead(400).end(); return; }
+
+  let p;
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+    p = decodeURIComponent(parsedUrl.pathname);
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
+
+  // --- SEC-02 & SEC-03: Local Admin Bootstrap Token & Cookie Authentication ---
+  if (p === '/live/control.html') {
+    const queryToken = parsedUrl.searchParams.get('token');
+    const cookieHeader = req.headers.cookie || '';
+    const sessionMatch = cookieHeader.match(/arcade_session=([a-f0-9]{64})/);
+    const existingSession = sessionMatch ? sessionMatch[1] : null;
+    const hasValidSession = existingSession && validSessions.has(existingSession);
+
+    // Kịch bản A: Truy cập kèm bootstrap token
+    if (queryToken) {
+      if (bootstrapToken && queryToken === bootstrapToken) {
+        // Hủy bootstrap token ngay lập tức (Single-use token)
+        bootstrapToken = null;
+        const newSessionId = crypto.randomBytes(32).toString('hex');
+        validSessions.add(newSessionId);
+
+        // 303 Redirect sang URL sạch không còn token trên thanh địa chỉ
+        res.writeHead(303, {
+          'Location': '/live/control.html',
+          'Set-Cookie': `arcade_session=${newSessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400`,
+          'Cache-Control': 'no-store',
+          'Referrer-Policy': 'no-referrer',
+        });
+        res.end();
+        return;
+      } else {
+        // Token sai hoặc đã được sử dụng
+        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<h2>403 Forbidden</h2><p>Token bootstrap không hợp lệ hoặc đã qua sử dụng. Vui lòng kiểm tra terminal hoặc khởi động lại server.</p>');
+        return;
+      }
+    }
+
+    // Kịch bản B: Không có query token -> kiểm tra cookie session
+    if (!hasValidSession) {
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<h2>403 Forbidden — Yêu cầu xác thực Admin</h2><p>Vui lòng mở liên kết chứa token bootstrap được in ra terminal khi server khởi động.</p>');
+      return;
+    }
+  }
+
   const file = resolveStatic(p);
   if (!file) { res.writeHead(404).end('not found'); return; }
+
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404).end('not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': p.startsWith('/live/tts/') ? 'no-store' : 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+      'Cache-Control': p.startsWith('/live/tts/') ? 'no-store' : 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+    });
     if (req.method === 'HEAD') { res.end(); return; }
     fs.createReadStream(file).pipe(res);
   });
 });
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024,
-  verifyClient: ({ origin, req }) => {
-    if (!okHost(req.headers.host)) return false;
-    if (!origin) return true;                                   // OBS / non-browser clients send no Origin
-    try { return okHost(new URL(origin).host); } catch { return false; }
-  } });
-function broadcast(msg, only){ const s = JSON.stringify(msg); for (const c of wss.clients) if (c.readyState === 1 && (!only || c.role === only)) c.send(s); }
+
+/* ----------------------------------------------------------- WebSocket Server */
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  maxPayload: 64 * 1024,
+  verifyClient: ({ origin, req }, cb) => {
+    if (!okHost(req.headers.host)) return cb(false, 421, 'Wrong host');
+    if (origin) {
+      try {
+        if (!okHost(new URL(origin).host)) return cb(false, 403, 'Forbidden origin');
+      } catch {
+        return cb(false, 403, 'Invalid origin');
+      }
+    }
+
+    // Kiểm tra quyền role=control bằng cookie session (SEC-02)
+    const urlObj = new URL(req.url, 'http://x');
+    const requestedRole = urlObj.searchParams.get('role');
+    const cookieHeader = req.headers.cookie || '';
+    const sessionMatch = cookieHeader.match(/arcade_session=([a-f0-9]{64})/);
+    const sessionId = sessionMatch ? sessionMatch[1] : null;
+    const isAuthedAdmin = sessionId && validSessions.has(sessionId);
+
+    if (requestedRole === 'control' && !isAuthedAdmin) {
+      return cb(false, 401, 'Unauthorized control role');
+    }
+
+    cb(true);
+  },
+});
+
+function broadcast(msg, only){
+  const s = JSON.stringify(msg);
+  for (const c of wss.clients) {
+    if (c.readyState === 1 && (!only || c.role === only)) c.send(s);
+  }
+}
+
 wss.on('connection', (ws, req) => {
-  ws.role = new URL(req.url, 'http://x').searchParams.get('role') === 'control' ? 'control' : 'overlay';
+  const urlObj = new URL(req.url, 'http://x');
+  const cookieHeader = req.headers.cookie || '';
+  const sessionMatch = cookieHeader.match(/arcade_session=([a-f0-9]{64})/);
+  const sessionId = sessionMatch ? sessionMatch[1] : null;
+  const isAuthedAdmin = sessionId && validSessions.has(sessionId);
+
+  ws.role = (urlObj.searchParams.get('role') === 'control' && isAuthedAdmin) ? 'control' : 'overlay';
+
+  // Nếu là Overlay, cấp phát rendererId và gán Primary Renderer nếu chưa có
+  if (ws.role === 'overlay') {
+    ws.rendererId = 'rend_' + crypto.randomBytes(4).toString('hex');
+    if (!scheduler.primaryRendererId) {
+      scheduler.setPrimaryRenderer(ws.rendererId);
+    }
+  }
+
+  // Gửi snapshot đồng bộ ban đầu
   ws.send(JSON.stringify(snapshot()));
-  if (ws.role === 'control') ws.send(JSON.stringify({ t:'logs', lines: log }));
+  if (ws.role === 'control') {
+    ws.send(JSON.stringify({ t:'logs', lines: log }));
+  }
+
   ws.on('message', buf => {
-    if (ws.role !== 'control') return;                          // overlays only listen
-    try { const m = JSON.parse(buf); if (m && m.t === 'ctl') onControl(m); } catch (e) { addLog('Lệnh lỗi: ' + e.message); }
+    try {
+      const m = JSON.parse(buf);
+
+      // 1. Phân quyền Control Panel
+      if (ws.role === 'control' && m && m.t === 'ctl') {
+        onControl(m);
+        return;
+      }
+
+      // 2. Tiếp nhận Telemetry từ Overlay (PREPARE, ACK, ABORT)
+      if (ws.role === 'overlay') {
+        const validation = validateClientMessage(m);
+        if (!validation.valid) return;
+
+        if (m.type === MESSAGE_TYPES.OVERLAY_PREPARED) {
+          scheduler.handleOverlayPrepared(m);
+        } else if (m.type === MESSAGE_TYPES.OVERLAY_ATTACK_ACK) {
+          scheduler.handleAttackAck(m);
+        } else if (m.type === MESSAGE_TYPES.OVERLAY_DRIFT_ABORT) {
+          scheduler.handleDriftAbort(m);
+        }
+      }
+    } catch (e) {
+      addLog('Lỗi xử lý message: ' + e.message);
+    }
+  });
+
+  ws.on('close', () => {
+    if (ws.role === 'overlay' && ws.rendererId) {
+      scheduler.handleRendererDisconnect(ws.rendererId);
+    }
   });
 });
-server.listen(PORT, HOST, () => addLog(`Server chạy tại http://localhost:${PORT}  ·  Bảng điều khiển: http://localhost:${PORT}/live/control.html  ·  Overlay: http://localhost:${PORT}/live/overlay.html`));
+
+server.listen(PORT, HOST, () => {
+  console.log(`\n======================================================`);
+  console.log(`🚀 TIKTOK LIVE ARCADE SERVER v1.1`);
+  console.log(`📍 Lắng nghe: http://127.0.0.1:${PORT}`);
+  console.log(`🔑 BOOTSTRAP ADMIN URL (Dùng 1 lần):`);
+  console.log(`   http://127.0.0.1:${PORT}/live/control.html?token=${bootstrapToken}`);
+  console.log(`🎬 OVERLAY 9:16 URL:`);
+  console.log(`   http://127.0.0.1:${PORT}/live/overlay.html`);
+  console.log(`======================================================\n`);
+  addLog(`Server chạy tại http://localhost:${PORT}`);
+});
